@@ -1,5 +1,3 @@
-// lib/screens/conversation/conversation_controller.dart
-
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -32,13 +30,9 @@ class ConversationController {
     required this.chatId,
     required this.friend,
   });
-
-  // Getters for repositories and providers
   UserRepository get _userRepository => ref.read(userRepositoryProvider);
   ChatService get _chatService => ref.read(chatServiceProvider);
   MessageService get _messageService => ref.read(messageServiceProvider);
-
-  // Mark messages as read
   Future<void> markMessagesAsRead() async {
     final currentUser = ref.read(currentUserProvider).value;
     if (currentUser != null) {
@@ -46,7 +40,6 @@ class ConversationController {
     }
   }
 
-  // Update typing status
   Future<void> updateTypingStatus({
     required String userId,
     required bool isTyping,

@@ -261,6 +261,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true, // Add this
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: isDark ? AppTheme.cardDark : AppTheme.cardLight,
@@ -279,78 +280,86 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Send Attachment',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+              Flexible(
+                // Change this from Padding to Flexible
+                child: SingleChildScrollView(
+                  // Add scrolling
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Send Attachment',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        _buildAttachmentOption(
+                          icon: Icons.camera_alt_rounded,
+                          label: 'Camera',
+                          color: Colors.purple,
+                          onTap: () async {
+                            Navigator.pop(context);
+                            final image = await _controller.capturePhoto();
+                            if (image != null) {
+                              await _sendMediaMessage(MessageType.image, image);
+                            }
+                          },
+                          theme: theme,
+                          isDark: isDark,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildAttachmentOption(
+                          icon: Icons.image_rounded,
+                          label: 'Photo',
+                          color: Colors.blue,
+                          onTap: () async {
+                            Navigator.pop(context);
+                            final image = await _controller
+                                .pickImageFromGallery();
+                            if (image != null) {
+                              await _sendMediaMessage(MessageType.image, image);
+                            }
+                          },
+                          theme: theme,
+                          isDark: isDark,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildAttachmentOption(
+                          icon: Icons.videocam_rounded,
+                          label: 'Video',
+                          color: Colors.red,
+                          onTap: () async {
+                            Navigator.pop(context);
+                            final video = await _controller
+                                .pickVideoFromGallery();
+                            if (video != null) {
+                              await _sendMediaMessage(MessageType.video, video);
+                            }
+                          },
+                          theme: theme,
+                          isDark: isDark,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildAttachmentOption(
+                          icon: Icons.insert_drive_file_rounded,
+                          label: 'Document',
+                          color: Colors.orange,
+                          onTap: () async {
+                            Navigator.pop(context);
+                            final file = await _controller.pickDocument();
+                            if (file != null) {
+                              await _sendMediaMessage(MessageType.file, file);
+                            }
+                          },
+                          theme: theme,
+                          isDark: isDark,
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 20),
-                    _buildAttachmentOption(
-                      icon: Icons.camera_alt_rounded,
-                      label: 'Camera',
-                      color: Colors.purple,
-                      onTap: () async {
-                        Navigator.pop(context);
-                        final image = await _controller.capturePhoto();
-                        if (image != null) {
-                          await _sendMediaMessage(MessageType.image, image);
-                        }
-                      },
-                      theme: theme,
-                      isDark: isDark,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildAttachmentOption(
-                      icon: Icons.image_rounded,
-                      label: 'Photo',
-                      color: Colors.blue,
-                      onTap: () async {
-                        Navigator.pop(context);
-                        final image = await _controller.pickImageFromGallery();
-                        if (image != null) {
-                          await _sendMediaMessage(MessageType.image, image);
-                        }
-                      },
-                      theme: theme,
-                      isDark: isDark,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildAttachmentOption(
-                      icon: Icons.videocam_rounded,
-                      label: 'Video',
-                      color: Colors.red,
-                      onTap: () async {
-                        Navigator.pop(context);
-                        final video = await _controller.pickVideoFromGallery();
-                        if (video != null) {
-                          await _sendMediaMessage(MessageType.video, video);
-                        }
-                      },
-                      theme: theme,
-                      isDark: isDark,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildAttachmentOption(
-                      icon: Icons.insert_drive_file_rounded,
-                      label: 'Document',
-                      color: Colors.orange,
-                      onTap: () async {
-                        Navigator.pop(context);
-                        final file = await _controller.pickDocument();
-                        if (file != null) {
-                          await _sendMediaMessage(MessageType.file, file);
-                        }
-                      },
-                      theme: theme,
-                      isDark: isDark,
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ],

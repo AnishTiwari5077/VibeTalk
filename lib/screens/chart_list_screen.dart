@@ -7,7 +7,7 @@ import 'package:new_chart/core/date_formattor.dart';
 import 'package:new_chart/models/chart_model.dart';
 import 'package:new_chart/providers/chart_provider.dart';
 
-import 'package:new_chart/screens/conversation_screen.dart';
+import 'package:new_chart/screens/Conservation/conversation_screen.dart';
 import 'package:new_chart/widgets/empty_state.dart';
 import 'package:new_chart/widgets/user_avatar.dart';
 
