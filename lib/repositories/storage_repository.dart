@@ -25,11 +25,14 @@ class StorageRepository {
       final fileSize = await file.length();
       debugPrint('   File size: ${fileSize / 1024} KB');
 
+      // ✅ Use timestamp to create unique filename
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+
       final response = await _cloudinary.uploadFile(
         CloudinaryFile.fromFile(
           file.path,
           folder: 'avatars/$uid',
-          publicId: 'profile',
+          publicId: 'profile_$timestamp', // ✅ Changed to include timestamp
           resourceType: CloudinaryResourceType.Image,
         ),
       );
