@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
 import 'package:new_chart/services/notification_services.dart';
 import 'package:uuid/uuid.dart';
 import '../models/friend_request_model.dart';
@@ -61,6 +60,7 @@ class FriendRequestService {
     try {
       final currentUser = ref.read(currentUserProvider).value;
       if (currentUser == null) throw Exception('Not authenticated');
+
       await _firestore.collection('friendRequests').doc(requestId).update({
         'status': 'accepted',
       });
@@ -172,34 +172,70 @@ class FriendRequestService {
   }
 }
 
-final receivedRequestsProvider = StreamProvider<List<FriendRequest>>((ref) {
+final receivedRequestsProvider = StreamProvider<List<FriendRequest>>((
+  ref,
+) async* {
   final currentUser = ref.watch(currentUserProvider).value;
-  if (currentUser == null) return Stream.value([]);
+  if (currentUser == null) {
+    yield [];
+    return;
+  }
 
-  return FirebaseFirestore.instance
-      .collection('friendRequests')
-      .where('receiverId', isEqualTo: currentUser.uid)
-      .where('status', isEqualTo: 'pending')
-      .snapshots()
-      .map(
-        (snapshot) => snapshot.docs
-            .map((doc) => FriendRequest.fromMap(doc.data()))
-            .toList(),
-      );
+  try {
+    await for (final snapshot
+        in FirebaseFirestore.instance
+            .collection('friendRequests')
+            .where('receiverId', isEqualTo: currentUser.uid)
+            .where('status', isEqualTo: 'pending')
+            .snapshots()) {
+      // Check if user is still authenticated
+      final stillAuthenticated = ref.read(currentUserProvider).value;
+      if (stillAuthenticated == null) {
+        yield [];
+        return;
+      }
+
+      final requests = snapshot.docs
+          .map((doc) => FriendRequest.fromMap(doc.data()))
+          .toList();
+
+      yield requests;
+    }
+  } catch (e) {
+    // Handle permission errors gracefully
+    yield [];
+  }
 });
 
-final sentRequestsProvider = StreamProvider<List<FriendRequest>>((ref) {
+final sentRequestsProvider = StreamProvider<List<FriendRequest>>((ref) async* {
   final currentUser = ref.watch(currentUserProvider).value;
-  if (currentUser == null) return Stream.value([]);
+  if (currentUser == null) {
+    yield [];
+    return;
+  }
 
-  return FirebaseFirestore.instance
-      .collection('friendRequests')
-      .where('senderId', isEqualTo: currentUser.uid)
-      .where('status', isEqualTo: 'pending')
-      .snapshots()
-      .map(
-        (snapshot) => snapshot.docs
-            .map((doc) => FriendRequest.fromMap(doc.data()))
-            .toList(),
-      );
+  try {
+    await for (final snapshot
+        in FirebaseFirestore.instance
+            .collection('friendRequests')
+            .where('senderId', isEqualTo: currentUser.uid)
+            .where('status', isEqualTo: 'pending')
+            .snapshots()) {
+      // Check if user is still authenticated
+      final stillAuthenticated = ref.read(currentUserProvider).value;
+      if (stillAuthenticated == null) {
+        yield [];
+        return;
+      }
+
+      final requests = snapshot.docs
+          .map((doc) => FriendRequest.fromMap(doc.data()))
+          .toList();
+
+      yield requests;
+    }
+  } catch (e) {
+    // Handle permission errors gracefully
+    yield [];
+  }
 });

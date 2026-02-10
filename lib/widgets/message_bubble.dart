@@ -30,6 +30,10 @@ class MessageBubble extends StatelessWidget {
     required this.onLongPress,
   });
 
+  // Helper to check if message is media type (image or video)
+  bool get isMediaMessage =>
+      message.type == MessageType.image || message.type == MessageType.video;
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -38,12 +42,16 @@ class MessageBubble extends StatelessWidget {
         alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          // No padding for media messages
+          padding: isMediaMessage
+              ? EdgeInsets.zero
+              : const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           constraints: BoxConstraints(
             maxWidth: MediaQuery.of(context).size.width * 0.75,
           ),
           decoration: BoxDecoration(
-            gradient: isMe
+            // No gradient/color for media messages
+            gradient: !isMediaMessage && isMe
                 ? LinearGradient(
                     colors: [
                       theme.colorScheme.primary,
@@ -51,27 +59,33 @@ class MessageBubble extends StatelessWidget {
                     ],
                   )
                 : null,
-            color: isMe
-                ? null
-                : (isDark ? AppTheme.cardDark : Colors.grey.shade100),
+            color: !isMediaMessage && !isMe
+                ? (isDark ? AppTheme.cardDark : Colors.grey.shade100)
+                : null,
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(20),
               topRight: const Radius.circular(20),
               bottomLeft: Radius.circular(isMe ? 20 : 4),
               bottomRight: Radius.circular(isMe ? 4 : 20),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            // No shadow for media messages
+            boxShadow: !isMediaMessage
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.3 : 0.08,
+                      ),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (message.replyToContent != null) ...[
+              // Reply preview - only show for non-media messages
+              if (message.replyToContent != null && !isMediaMessage) ...[
                 Container(
                   padding: const EdgeInsets.all(8),
                   margin: const EdgeInsets.only(bottom: 8),
@@ -132,17 +146,18 @@ class MessageBubble extends StatelessWidget {
                         maxHeightDiskCache: 1200,
                         placeholder: (context, url) => Container(
                           height: 200,
-                          color: Colors.grey.shade300,
+                          color: isDark ? Colors.grey[800] : Colors.grey[300],
                           child: const Center(
                             child: CircularProgressIndicator(),
                           ),
                         ),
                         errorWidget: (context, url, error) => Container(
                           height: 200,
-                          color: Colors.grey.shade300,
-                          child: const Icon(
+                          color: isDark ? Colors.grey[800] : Colors.grey[300],
+                          child: Icon(
                             Icons.error_outline_rounded,
                             size: 48,
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
                           ),
                         ),
                         fit: BoxFit.cover,
@@ -240,9 +255,15 @@ class MessageBubble extends StatelessWidget {
                   ),
                 ),
 
+              // Reactions
               if (message.reactions != null && message.reactions!.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(top: 8),
+                  // Add padding for media messages
+                  padding: EdgeInsets.only(
+                    top: 8,
+                    left: isMediaMessage ? 12 : 0,
+                    right: isMediaMessage ? 12 : 0,
+                  ),
                   child: MessageReactions(
                     reactions: message.reactions,
                     currentUserId: currentUserId,
@@ -252,53 +273,71 @@ class MessageBubble extends StatelessWidget {
                   ),
                 ),
 
-              const SizedBox(height: 6),
+              SizedBox(height: isMediaMessage ? 4 : 6),
 
               // Timestamp and read status
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (message.isEdited)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: Text(
-                        'edited',
-                        style: TextStyle(
-                          color: isMe
-                              ? Colors.white.withValues(alpha: .7)
-                              : (isDark
-                                    ? AppTheme.textTertiaryDark
-                                    : AppTheme.textTertiaryLight),
-                          fontSize: 10,
-                          fontStyle: FontStyle.italic,
+              Padding(
+                // Add padding for media messages
+                padding: EdgeInsets.only(
+                  left: isMediaMessage ? 12 : 0,
+                  right: isMediaMessage ? 12 : 0,
+                  bottom: isMediaMessage ? 8 : 0,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (message.isEdited)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Text(
+                          'edited',
+                          style: TextStyle(
+                            // Different color for media messages
+                            color: isMediaMessage
+                                ? (isDark ? Colors.white70 : Colors.black54)
+                                : isMe
+                                ? Colors.white.withValues(alpha: .7)
+                                : (isDark
+                                      ? AppTheme.textTertiaryDark
+                                      : AppTheme.textTertiaryLight),
+                            fontSize: 10,
+                            fontStyle: FontStyle.italic,
+                          ),
                         ),
                       ),
+                    Text(
+                      DateFormatter.formatChatTime(message.timestamp),
+                      style: TextStyle(
+                        // Different color for media messages
+                        color: isMediaMessage
+                            ? (isDark ? Colors.white70 : Colors.black54)
+                            : isMe
+                            ? Colors.white.withValues(alpha: .85)
+                            : (isDark
+                                  ? AppTheme.textTertiaryDark
+                                  : AppTheme.textTertiaryLight),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  Text(
-                    DateFormatter.formatChatTime(message.timestamp),
-                    style: TextStyle(
-                      color: isMe
-                          ? Colors.white.withValues(alpha: .85)
-                          : (isDark
-                                ? AppTheme.textTertiaryDark
-                                : AppTheme.textTertiaryLight),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  if (isMe) ...[
-                    const SizedBox(width: 4),
-                    Icon(
-                      message.isRead
-                          ? Icons.done_all_rounded
-                          : Icons.done_rounded,
-                      size: 16,
-                      color: message.isRead
-                          ? Colors.lightBlueAccent
-                          : Colors.white.withValues(alpha: .85),
-                    ),
+                    if (isMe) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        message.isRead
+                            ? Icons.done_all_rounded
+                            : Icons.done_rounded,
+                        size: 16,
+                        color: isMediaMessage
+                            ? (message.isRead
+                                  ? Colors.lightBlueAccent
+                                  : (isDark ? Colors.white70 : Colors.black54))
+                            : (message.isRead
+                                  ? Colors.lightBlueAccent
+                                  : Colors.white.withValues(alpha: .85)),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ],
           ),

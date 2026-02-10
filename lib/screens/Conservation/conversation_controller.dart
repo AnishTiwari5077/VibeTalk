@@ -14,8 +14,8 @@ import 'package:new_chart/services/zego_services.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import '../../models/user_model.dart';
 import '../../models/message_model.dart';
-import '../../providers/auth_provider.dart' hide userRepositoryProvider;
-import '../../providers/user_provider.dart';
+import '../../providers/auth_provider.dart';
+
 import '../../repositories/storage_repository.dart';
 
 class ConversationController {

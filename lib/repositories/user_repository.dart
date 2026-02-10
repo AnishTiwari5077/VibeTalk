@@ -10,7 +10,6 @@ class UserRepository {
         try {
           return UserModel.fromMap(doc.data()!);
         } catch (e) {
-          // print('Error parsing UserModel: $e');
           return null;
         }
       }
@@ -29,7 +28,7 @@ class UserRepository {
         'typingInChatId': isTyping ? chatId : null,
       });
     } catch (e) {
-      //   print('Error updating typing status: $e');
+      // Handle error silently
     }
   }
 
@@ -65,7 +64,6 @@ class UserRepository {
       final blockedUsers = List<String>.from(userData['blockedUsers'] ?? []);
       return blockedUsers.contains(otherUserId);
     } catch (e) {
-      //   print('Error checking block status: $e');
       return false;
     }
   }
@@ -82,7 +80,6 @@ class UserRepository {
       final blockedUsers = List<String>.from(userData['blockedUsers'] ?? []);
       return blockedUsers.contains(currentUserId);
     } catch (e) {
-      //   print('Error checking if blocked by user: $e');
       return false;
     }
   }
@@ -110,7 +107,6 @@ class UserRepository {
                 try {
                   return UserModel.fromMap(doc.data());
                 } catch (e) {
-                  //  print('Error parsing user ${doc.id}: $e');
                   return null;
                 }
               })
@@ -134,7 +130,6 @@ class UserRepository {
                 try {
                   return UserModel.fromMap(doc.data());
                 } catch (e) {
-                  //    print('Error parsing user ${doc.id}: $e');
                   return null;
                 }
               })

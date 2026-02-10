@@ -8,8 +8,7 @@ import 'package:new_chart/core/date_formattor.dart';
 
 import 'package:new_chart/models/message_model.dart';
 import 'package:new_chart/models/user_model.dart';
-import 'package:new_chart/providers/auth_provider.dart'
-    hide userRepositoryProvider;
+import 'package:new_chart/providers/auth_provider.dart';
 import 'package:new_chart/providers/chart_provider.dart';
 import 'package:new_chart/providers/user_provider.dart';
 import 'package:new_chart/screens/Conservation/conversation_controller.dart';
@@ -677,7 +676,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                             return const SizedBox.shrink();
                           },
                           loading: () => const SizedBox.shrink(),
-                          error: (_, __) => const SizedBox.shrink(),
+                          error: (_, _) => const SizedBox.shrink(),
                         ),
                       ],
                     );
@@ -851,7 +850,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                       ),
                     ],
                   ),
-                  error: (_, __) => Row(
+                  error: (_, _) => Row(
                     children: [
                       UserAvatar(imageUrl: widget.friend.avatarUrl, radius: 20),
                       const SizedBox(width: 12),

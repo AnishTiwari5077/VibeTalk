@@ -4,16 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:new_chart/core/env_config.dart';
 import 'package:new_chart/core/error_handler.dart';
-
 import 'package:new_chart/widgets/loading_overlay.dart';
 import 'package:new_chart/widgets/profile_edit_dialog.dart';
 import 'package:new_chart/widgets/user_avatar.dart';
-
 import '../../providers/auth_provider.dart';
-
-import '../../repositories/user_repository.dart';
 import '../../repositories/storage_repository.dart';
-
 import '../../theme/app_theme.dart';
 
 class ProfileConstants {
@@ -25,15 +20,10 @@ class ProfileConstants {
   static const double buttonPaddingVertical = 12.0;
 }
 
-final userRepositoryProvider = Provider<UserRepository>((ref) {
-  return UserRepository();
-});
-
 final storageRepositoryProvider = Provider<StorageRepository>((ref) {
   return StorageRepository(
-    cloudName: EnvConfig.cloudinaryCloudName, //your cloudName
-    uploadPreset: EnvConfig.cloudinaryUploadPreset, // your upload preset
-    //your upload preset
+    cloudName: EnvConfig.cloudinaryCloudName,
+    uploadPreset: EnvConfig.cloudinaryUploadPreset,
   );
 });
 
@@ -73,7 +63,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await ref.read(authRepositoryProvider).signOut();
+      // Use the auth service that properly handles logout
+      await ref.read(authServiceProvider).logout();
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);

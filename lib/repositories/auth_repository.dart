@@ -38,7 +38,6 @@ class AuthRepository {
     }
   }
 
-  /// ---------------- SIGN UP ----------------
   Future<UserCredential> signUpWithEmailAndPassword({
     required String email,
     required String password,
@@ -90,12 +89,17 @@ class AuthRepository {
   Future<void> signOut() async {
     try {
       if (currentUser != null) {
+        // Update user status and clear FCM token before signing out
         await _firestore.collection('users').doc(currentUser!.uid).set({
           'isOnline': false,
           'lastSeen': DateTime.now().millisecondsSinceEpoch,
+          'fcmToken': '', // Clear FCM token
+          'isTyping': false, // Clear typing status
+          'typingInChatId': null,
         }, SetOptions(merge: true));
       }
 
+      // Sign out from Firebase Auth
       await _auth.signOut();
     } catch (e) {
       rethrow;

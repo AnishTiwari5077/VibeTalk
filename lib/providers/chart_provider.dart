@@ -1,10 +1,7 @@
-// lib/providers/chat_provider.dart
-
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:new_chart/models/chart_model.dart';
-
 import 'package:new_chart/services/notification_services.dart';
 import 'package:new_chart/services/message_service.dart';
 import 'package:uuid/uuid.dart';
@@ -12,27 +9,44 @@ import '../models/message_model.dart';
 import '../models/user_model.dart';
 import 'auth_provider.dart';
 
-final chatListProvider = StreamProvider<List<ChatModel>>((ref) {
+final chatListProvider = StreamProvider<List<ChatModel>>((ref) async* {
   final currentUser = ref.watch(currentUserProvider).value;
-  if (currentUser == null) return Stream.value([]);
+  if (currentUser == null) {
+    yield [];
+    return;
+  }
 
-  return FirebaseFirestore.instance
-      .collection('chats')
-      .where('participants', arrayContains: currentUser.uid)
-      .orderBy('lastMessageTime', descending: true)
-      .snapshots()
-      .map((snapshot) {
-        return snapshot.docs
-            .map((doc) {
-              try {
-                return ChatModel.fromMap(doc.data());
-              } catch (e) {
-                return null;
-              }
-            })
-            .whereType<ChatModel>()
-            .toList();
-      });
+  try {
+    await for (final snapshot
+        in FirebaseFirestore.instance
+            .collection('chats')
+            .where('participants', arrayContains: currentUser.uid)
+            .orderBy('lastMessageTime', descending: true)
+            .snapshots()) {
+      // Check if user is still authenticated
+      final stillAuthenticated = ref.read(currentUserProvider).value;
+      if (stillAuthenticated == null) {
+        yield [];
+        return;
+      }
+
+      final chats = snapshot.docs
+          .map((doc) {
+            try {
+              return ChatModel.fromMap(doc.data());
+            } catch (e) {
+              return null;
+            }
+          })
+          .whereType<ChatModel>()
+          .toList();
+
+      yield chats;
+    }
+  } catch (e) {
+    // Handle permission errors gracefully (e.g., after logout)
+    yield [];
+  }
 });
 
 class MessagesPagination {
@@ -71,37 +85,51 @@ final messagesProvider = StreamProvider.family<List<MessageModel>, String>((
 
   final userRepository = ref.read(userRepositoryProvider);
 
-  await for (final snapshot
-      in FirebaseFirestore.instance
-          .collection('chats')
-          .doc(chatId)
-          .collection('messages')
-          .orderBy('timestamp', descending: true)
-          .snapshots()) {
-    final messages = snapshot.docs
-        .map((doc) {
-          try {
-            return MessageModel.fromMap(doc.data());
-          } catch (e) {
-            return null;
-          }
-        })
-        .whereType<MessageModel>()
-        .toList();
-    final filteredMessages = <MessageModel>[];
-    for (final message in messages) {
-      final isBlocked = await userRepository.isUserBlocked(
-        currentUser.uid,
-        message.senderId,
-      );
-      if (!isBlocked) {
-        filteredMessages.add(message);
+  try {
+    await for (final snapshot
+        in FirebaseFirestore.instance
+            .collection('chats')
+            .doc(chatId)
+            .collection('messages')
+            .orderBy('timestamp', descending: true)
+            .snapshots()) {
+      // Check if user is still authenticated
+      final stillAuthenticated = ref.read(currentUserProvider).value;
+      if (stillAuthenticated == null) {
+        yield [];
+        return;
       }
-    }
 
-    yield filteredMessages;
+      final messages = snapshot.docs
+          .map((doc) {
+            try {
+              return MessageModel.fromMap(doc.data());
+            } catch (e) {
+              return null;
+            }
+          })
+          .whereType<MessageModel>()
+          .toList();
+
+      final filteredMessages = <MessageModel>[];
+      for (final message in messages) {
+        final isBlocked = await userRepository.isUserBlocked(
+          currentUser.uid,
+          message.senderId,
+        );
+        if (!isBlocked) {
+          filteredMessages.add(message);
+        }
+      }
+
+      yield filteredMessages;
+    }
+  } catch (e) {
+    // Handle permission errors gracefully
+    yield [];
   }
 });
+
 final messageServiceProvider = Provider<MessageService>((ref) {
   return MessageService();
 });
@@ -129,6 +157,7 @@ class ChatService {
     try {
       final currentUser = ref.read(currentUserProvider).value;
       if (currentUser == null) throw Exception('Not authenticated');
+
       final userRepository = ref.read(userRepositoryProvider);
       final isBlockedByReceiver = await userRepository.isUserBlocked(
         receiverId,
@@ -140,6 +169,7 @@ class ChatService {
           'Cannot send message. You have been blocked by this user.',
         );
       }
+
       final hasBlockedReceiver = await userRepository.isUserBlocked(
         currentUser.uid,
         receiverId,
@@ -163,6 +193,7 @@ class ChatService {
         replyToContent: replyToContent,
         replyToSenderId: replyToSenderId,
       );
+
       final batch = _firestore.batch();
 
       final messageRef = _firestore
@@ -220,7 +251,6 @@ class ChatService {
       }
     } catch (e) {
       // Don't throw, just log
-      // debugPrint('Notification error: $e');
     }
   }
 
@@ -288,6 +318,7 @@ class ChatService {
     try {
       final currentUser = ref.read(currentUserProvider).value;
       if (currentUser == null) throw Exception('Not authenticated');
+
       final userRepository = ref.read(userRepositoryProvider);
 
       final isBlocked = await userRepository.isUserBlocked(
