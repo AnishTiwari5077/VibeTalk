@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,8 @@ import 'package:new_chart/providers/chart_provider.dart';
 import 'package:new_chart/repositories/user_repository.dart';
 import 'package:new_chart/services/image_service.dart';
 import 'package:new_chart/services/message_service.dart';
+
+import 'package:new_chart/services/notification_services.dart';
 import 'package:new_chart/services/zego_services.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import '../../models/user_model.dart';
@@ -34,6 +37,7 @@ class ConversationController {
   UserRepository get _userRepository => ref.read(userRepositoryProvider);
   ChatService get _chatService => ref.read(chatServiceProvider);
   MessageService get _messageService => ref.read(messageServiceProvider);
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   Future<void> markMessagesAsRead() async {
     final currentUser = ref.read(currentUserProvider).value;
@@ -53,7 +57,7 @@ class ConversationController {
     );
   }
 
-  // Send text message
+  // Send text message with notification
   Future<void> sendTextMessage({
     required String content,
     String? replyToMessageId,
@@ -61,6 +65,10 @@ class ConversationController {
     String? replyToSenderId,
   }) async {
     try {
+      final currentUser = ref.read(currentUserProvider).value;
+      if (currentUser == null) return;
+
+      // Send message to Firestore
       await _chatService.sendMessage(
         chatId: chatId,
         receiverId: friend.uid,
@@ -69,6 +77,14 @@ class ConversationController {
         replyToMessageId: replyToMessageId,
         replyToContent: replyToContent,
         replyToSenderId: replyToSenderId,
+      );
+
+      // Send push notification
+      await _sendPushNotification(
+        receiverId: friend.uid,
+        senderName: currentUser.username,
+        messageContent: content,
+        senderId: currentUser.uid,
       );
     } catch (e) {
       if (context.mounted) {
@@ -260,9 +276,12 @@ class ConversationController {
     }
   }
 
-  // Send voice message
+  // Send voice message with notification
   Future<void> sendVoiceMessage(String audioPath, Duration duration) async {
     try {
+      final currentUser = ref.read(currentUserProvider).value;
+      if (currentUser == null) return;
+
       debugPrint('Uploading voice message...');
       final storageRepo = StorageRepository(
         cloudName: EnvConfig.cloudinaryCloudName,
@@ -291,6 +310,14 @@ class ConversationController {
         await file.delete();
       }
 
+      // Send push notification
+      await _sendPushNotification(
+        receiverId: friend.uid,
+        senderName: currentUser.username,
+        messageContent: '🎤 Voice message',
+        senderId: currentUser.uid,
+      );
+
       if (context.mounted) {
         ErrorHandler.showSuccessSnackBar(context, 'Voice message sent');
       }
@@ -306,9 +333,12 @@ class ConversationController {
     }
   }
 
-  // Send media message
+  // Send media message with notification
   Future<void> sendMediaMessage(MessageType type, File file) async {
     try {
+      final currentUser = ref.read(currentUserProvider).value;
+      if (currentUser == null) return;
+
       debugPrint('Starting to send ${type.name} message...');
       debugPrint('File path: ${file.path}');
       debugPrint('File exists: ${await file.exists()}');
@@ -330,20 +360,36 @@ class ConversationController {
 
       debugPrint('${type.name} uploaded successfully: $mediaUrl');
 
+      final content = type == MessageType.image
+          ? 'Image'
+          : type == MessageType.video
+          ? 'Video'
+          : 'File';
+
       await _chatService.sendMessage(
         chatId: chatId,
         receiverId: friend.uid,
-        content: type == MessageType.image
-            ? 'Image'
-            : type == MessageType.video
-            ? 'Video'
-            : 'File',
+        content: content,
         type: type,
         mediaUrl: mediaUrl,
         fileName: file.path.split('/').last,
       );
 
       debugPrint('${type.name} message sent successfully');
+
+      // Send push notification with appropriate emoji
+      final notificationContent = type == MessageType.image
+          ? '📷 Photo'
+          : type == MessageType.video
+          ? '🎥 Video'
+          : '📎 File';
+
+      await _sendPushNotification(
+        receiverId: friend.uid,
+        senderName: currentUser.username,
+        messageContent: notificationContent,
+        senderId: currentUser.uid,
+      );
 
       if (context.mounted) {
         ErrorHandler.showSuccessSnackBar(
@@ -361,6 +407,79 @@ class ConversationController {
         );
       }
       rethrow;
+    }
+  }
+
+  // Private method to send push notification
+  Future<void> _sendPushNotification({
+    required String receiverId,
+    required String senderName,
+    required String messageContent,
+    required String senderId,
+  }) async {
+    try {
+      // Get receiver's data from Firestore
+      final receiverDoc = await _firestore
+          .collection('users')
+          .doc(receiverId)
+          .get();
+
+      if (!receiverDoc.exists) {
+        debugPrint('❌ Receiver not found in Firestore');
+        return;
+      }
+
+      final receiverData = receiverDoc.data();
+      if (receiverData == null) {
+        debugPrint('❌ Receiver data is null');
+        return;
+      }
+
+      final receiverToken = receiverData['fcmToken'] as String?;
+
+      if (receiverToken == null || receiverToken.isEmpty) {
+        debugPrint('❌ Receiver has no FCM token');
+        return;
+      }
+
+      debugPrint(
+        '📱 Receiver token found: ${receiverToken.substring(0, 20)}...',
+      );
+
+      // Check if receiver is online and currently in this chat
+      final isReceiverOnline = receiverData['isOnline'] == true;
+      final isReceiverTyping = receiverData['isTyping'] == true;
+      final receiverChatId = receiverData['typingInChatId'] as String?;
+
+      final isReceiverInThisChat =
+          isReceiverOnline && isReceiverTyping && receiverChatId == chatId;
+
+      // Only send notification if receiver is not currently in this chat
+      if (!isReceiverInThisChat) {
+        debugPrint('📤 Sending push notification...');
+
+        final success = await NotificationService.sendMessageNotification(
+          receiverToken: receiverToken,
+          senderName: senderName,
+          messageContent: messageContent,
+          chatId: chatId,
+          senderId: senderId,
+        );
+
+        if (success) {
+          debugPrint('✅ Push notification sent successfully');
+        } else {
+          debugPrint('❌ Failed to send push notification');
+        }
+      } else {
+        debugPrint('⏭️ Skipping notification - receiver is in chat');
+        debugPrint('   - isOnline: $isReceiverOnline');
+        debugPrint('   - isTyping: $isReceiverTyping');
+        debugPrint('   - inChatId: $receiverChatId');
+      }
+    } catch (e) {
+      debugPrint('❌ Error sending push notification: $e');
+      // Don't throw - notification failure shouldn't stop message sending
     }
   }
 

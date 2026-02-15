@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:new_chart/models/chart_model.dart';
-import 'package:new_chart/services/notification_services.dart';
+
 import 'package:new_chart/services/message_service.dart';
 import 'package:uuid/uuid.dart';
 import '../models/message_model.dart';
@@ -215,42 +215,9 @@ class ChatService {
       });
 
       await batch.commit();
-      _sendNotificationAsync(receiverId, currentUser, type, content, chatId);
+      //   _sendNotificationAsync(receiverId, currentUser, type, content, chatId);
     } catch (e) {
       rethrow;
-    }
-  }
-
-  Future<void> _sendNotificationAsync(
-    String receiverId,
-    UserModel currentUser,
-    MessageType type,
-    String content,
-    String chatId,
-  ) async {
-    try {
-      final receiverDoc = await _firestore
-          .collection('users')
-          .doc(receiverId)
-          .get();
-
-      if (receiverDoc.exists) {
-        final receiverData = UserModel.fromMap(receiverDoc.data()!);
-        if (receiverData.fcmToken.isNotEmpty) {
-          await NotificationService.sendNotification(
-            token: receiverData.fcmToken,
-            title: currentUser.username,
-            body: _getLastMessagePreview(type, content),
-            data: {
-              'type': 'message',
-              'chatId': chatId,
-              'senderId': currentUser.uid,
-            },
-          );
-        }
-      }
-    } catch (e) {
-      // Don't throw, just log
     }
   }
 

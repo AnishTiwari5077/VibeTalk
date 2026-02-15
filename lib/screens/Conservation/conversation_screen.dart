@@ -67,6 +67,14 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _controller.markMessagesAsRead();
+      // ⭐ FIX: Tell system you're viewing this chat
+      if (_currentUserId != null) {
+        _userRepository.updateTypingStatus(
+          userId: _currentUserId!,
+          isTyping: false,
+          chatId: widget.chatId, // ⭐ Set chatId to track which chat you're in
+        );
+      }
     });
 
     _messageController.addListener(_onTextChanged);
@@ -79,10 +87,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     _scrollController.dispose();
     _typingTimer?.cancel();
 
-    if (_isCurrentlyTyping && _currentUserId != null) {
+    // ⭐ FIX: Always clear chatId when leaving (not just when typing)
+    if (_currentUserId != null) {
       _userRepository.updateTypingStatus(
         userId: _currentUserId!,
         isTyping: false,
+        chatId: null, // ⭐ Clear chatId when leaving
       );
     }
 
