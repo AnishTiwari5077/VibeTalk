@@ -2,9 +2,27 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../core/env_config.dart';
+
+@pragma('vm:entry-point')
+void notificationTapBackground(NotificationResponse response) {
+  if (response.payload != null) {
+    try {
+      // final data = jsonDecode(response.payload!);
+      if (response.actionId == 'reject_call') {
+        debugPrint('🚫 Call rejected in background from action');
+        // Future: Send rejection API call or Firestore update here
+      } else if (response.actionId == 'accept_call') {
+        debugPrint('📞 Call accepted in background from action');
+      }
+    } catch (e) {
+      debugPrint('❌ Error in background notification tap: $e');
+    }
+  }
+}
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _localNotifications =
@@ -57,6 +75,21 @@ class NotificationService {
           >()
           ?.createNotificationChannel(_channel);
 
+      const callChannel = AndroidNotificationChannel(
+        'call_channel',
+        'Call Notifications',
+        description: 'Notifications for incoming calls',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+      );
+
+      await _localNotifications
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.createNotificationChannel(callChannel);
+
       const androidSettings = AndroidInitializationSettings(
         '@mipmap/ic_launcher',
       );
@@ -71,8 +104,9 @@ class NotificationService {
       );
 
       await _localNotifications.initialize(
-        initSettings,
+        settings: initSettings,
         onDidReceiveNotificationResponse: _onNotificationTapped,
+        onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
       );
 
       await _messaging.setForegroundNotificationPresentationOptions(
@@ -97,8 +131,12 @@ class NotificationService {
   }
 
   static Future<void> _handleForegroundMessage(RemoteMessage message) async {
-    debugPrint('📩 Foreground message: ${message.notification?.title}');
-    await _showLocalNotification(message);
+    debugPrint('📩 Foreground message received: ${message.data}');
+    if (message.data['type'] == 'call') {
+      await showCallNotification(message);
+    } else {
+      await _showLocalNotification(message);
+    }
   }
 
   static Future<void> _showLocalNotification(RemoteMessage message) async {
@@ -132,13 +170,60 @@ class NotificationService {
       );
 
       await _localNotifications.show(
-        notification.hashCode,
-        notification.title ?? 'New Message',
-        notification.body ?? '',
-        details,
+        id: notification.hashCode,
+        title: notification.title ?? 'New Message',
+        body: notification.body ?? '',
+        notificationDetails: details,
         payload: jsonEncode(message.data),
       );
     }
+  }
+
+  static Future<void> showCallNotification(RemoteMessage message) async {
+    final callerName = message.data['callerName'] ?? 'Someone';
+    
+    final androidDetails = const AndroidNotificationDetails(
+      'call_channel',
+      'Call Notifications',
+      channelDescription: 'Notifications for incoming calls',
+      importance: Importance.max,
+      priority: Priority.max,
+      fullScreenIntent: true,
+      category: AndroidNotificationCategory.call,
+      actions: <AndroidNotificationAction>[
+        AndroidNotificationAction(
+          'accept_call',
+          'Accept',
+          titleColor: Color.fromARGB(255, 0, 255, 0),
+        ),
+        AndroidNotificationAction(
+          'reject_call',
+          'Reject',
+          titleColor: Color.fromARGB(255, 255, 0, 0),
+          cancelNotification: true,
+        ),
+      ],
+    );
+
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      categoryIdentifier: 'call',
+    );
+
+    final details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    await _localNotifications.show(
+      id: message.hashCode,
+      title: 'Incoming Call',
+      body: '$callerName is calling you',
+      notificationDetails: details,
+      payload: jsonEncode(message.data),
+    );
   }
 
   static void _handleNotificationTap(RemoteMessage message) {
@@ -179,6 +264,15 @@ class NotificationService {
         break;
       case 'request_accepted':
         debugPrint('✅ Friend request accepted notification');
+        break;
+      case 'call':
+        final chatId = data['chatId'] as String?;
+        final callerId = data['callerId'] as String?;
+        final callerName = data['callerName'] as String?;
+        if (chatId != null && callerId != null && callerName != null) {
+          debugPrint('📞 Call notification tapped, navigate to call screen');
+          onNotificationTap?.call(chatId, callerId, callerName);
+        }
         break;
       default:
         debugPrint('❓ Unknown notification type: $type');

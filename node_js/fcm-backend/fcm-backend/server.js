@@ -91,6 +91,54 @@ app.post('/send-notification', async (req, res) => {
 });
 
 // =======================
+// SEND CALL NOTIFICATION
+// =======================
+app.post('/send-call', async (req, res) => {
+  try {
+    const { token, callerName, callerId, chatId } = req.body;
+
+    console.log('📞 Call Request:', req.body);
+
+    if (!token || !callerName || !callerId) {
+      return res.status(400).json({
+        success: false,
+        error: 'token, callerName, callerId are required',
+      });
+    }
+
+    // Send data-only message for background handling in Flutter
+    const message = {
+      token: token,
+      data: {
+        type: 'call',
+        callerName: callerName,
+        callerId: callerId,
+        chatId: chatId || '',
+      },
+      android: {
+        priority: 'high',
+      },
+    };
+
+    const response = await admin.messaging().send(message);
+
+    console.log('✅ Call Notification Sent:', response);
+
+    res.json({
+      success: true,
+      messageId: response,
+    });
+  } catch (error) {
+    console.error('❌ Call Notification Error:', error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// =======================
 // SERVER START
 // =======================
 app.listen(PORT, '0.0.0.0', () => {

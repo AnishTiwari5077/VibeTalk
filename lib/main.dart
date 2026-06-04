@@ -16,6 +16,11 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   debugPrint("📬 Background message: ${message.messageId}");
+  
+  if (message.data['type'] == 'call') {
+    await NotificationService.initialize();
+    await NotificationService.showCallNotification(message);
+  }
 }
 
 void main() async {
