@@ -17,17 +17,17 @@ import 'package:permission_handler/permission_handler.dart';
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Future.wait([dotenv.load(fileName: ".env"), Firebase.initializeApp()]);
   debugPrint("📬 Background message: ${message.messageId}");
-  
+
   // Ignore ZegoCloud offline push messages as they are handled automatically by Zego
-  if (message.data.containsKey('zego') || 
-      message.data['resourceID'] == 'zego_call' || 
+  if (message.data.containsKey('zego') ||
+      message.data['resourceID'] == 'zego_call' ||
       message.data.containsKey('callID')) {
     debugPrint("📬 Ignoring Zego message in custom background handler.");
     return;
   }
 
   // Show local notification for regular messages
-  await NotificationService.initialize();
+  await NotificationService.initializeForBackground();
   await NotificationService.showLocalNotification(message);
 }
 
@@ -83,6 +83,10 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   }
 
   Future<void> _requestCallPermissions() async {
+    // Request Notification permission (Crucial for Android 13+ Offline Push)
+    if (await Permission.notification.isDenied) {
+      await Permission.notification.request();
+    }
     // Request "Display over other apps" (System Alert Window) permission
     if (await Permission.systemAlertWindow.isDenied) {
       await Permission.systemAlertWindow.request();

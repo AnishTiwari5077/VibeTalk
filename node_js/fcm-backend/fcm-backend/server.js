@@ -58,17 +58,13 @@ app.post('/send-notification', async (req, res) => {
 
     const message = {
       token: token,
-      notification: {
+      data: {
         title: title,
         body: body,
+        ...(data || {})
       },
-      data: data || {},
       android: {
         priority: 'high',
-        notification: {
-          channelId: 'chat_channel',
-          sound: 'default',
-        },
       },
     };
 

@@ -96,6 +96,30 @@ class NotificationService {
     }
   }
 
+  // Lightweight init for killed-state background isolates.
+  // Skips requestPermission() which can stall when there is no Activity context.
+  static Future<void> initializeForBackground() async {
+    _channel = const AndroidNotificationChannel(
+      'chat_channel',
+      'Chat Notifications',
+      description: 'Notifications for chat messages',
+      importance: Importance.high,
+      playSound: true,
+      enableVibration: true,
+    );
+
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(_channel);
+
+    const initSettings = InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    );
+    await _localNotifications.initialize(settings: initSettings);
+  }
+
   static Future<void> _handleForegroundMessage(RemoteMessage message) async {
     debugPrint('📩 Foreground message received: ${message.data}');
     await showLocalNotification(message);

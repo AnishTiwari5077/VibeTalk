@@ -452,7 +452,7 @@ class ConversationController {
       final receiverChatId = receiverData['typingInChatId'] as String?;
 
       final isReceiverInThisChat =
-          isReceiverOnline && isReceiverTyping && receiverChatId == chatId;
+          isReceiverOnline && receiverChatId == chatId;
 
       // Only send notification if receiver is not currently in this chat
       if (!isReceiverInThisChat) {
