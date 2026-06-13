@@ -580,10 +580,13 @@ class ConversationController {
         isVideoCall: false,
         resourceID: "zego_call",
         callID: callID,
-        notificationTitle: 'Incoming call',
+        // These appear in the ZEGOCLOUD UI overlay on the callee side
+        notificationTitle: currentUser.username,
         notificationMessage: '${currentUser.username} is calling you...',
       );
+      debugPrint('📞 Audio call sent to: ${friend.username} (${friend.uid})');
     } catch (e) {
+      debugPrint('❌ Audio call error: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
@@ -614,10 +617,13 @@ class ConversationController {
         isVideoCall: true,
         resourceID: "zego_call",
         callID: callID,
-        notificationTitle: 'Incoming video call',
+        // These appear in the ZEGOCLOUD UI overlay on the callee side
+        notificationTitle: currentUser.username,
         notificationMessage: '${currentUser.username} is video calling you...',
       );
+      debugPrint('🎥 Video call sent to: ${friend.username} (${friend.uid})');
     } catch (e) {
+      debugPrint('❌ Video call error: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Failed to start video call')),

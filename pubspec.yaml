@@ -60,6 +60,7 @@ dependencies:
   share_plus: ^12.0.1
   video_player: ^2.10.1
   zego_zpns: ^2.8.0
+  zego_uikit: ^2.29.0
   
   
 

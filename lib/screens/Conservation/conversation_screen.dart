@@ -12,6 +12,7 @@ import 'package:new_chart/providers/auth_provider.dart';
 import 'package:new_chart/providers/chart_provider.dart';
 import 'package:new_chart/providers/user_provider.dart';
 import 'package:new_chart/screens/Conservation/conversation_controller.dart';
+import 'package:new_chart/services/notification_services.dart';
 
 import 'package:new_chart/theme/app_theme.dart';
 import 'package:new_chart/widgets/block_user_view.dart';
@@ -65,6 +66,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
     _currentUserId = ref.read(currentUserProvider).value?.uid;
 
+    // Suppress foreground FCM notifications while viewing this chat
+    NotificationService.setActiveChatId(widget.chatId);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _controller.markMessagesAsRead();
       // ⭐ FIX: Tell system you're viewing this chat
@@ -86,6 +90,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     _messageController.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
+
+    // Re-enable foreground notifications when leaving the chat
+    NotificationService.clearActiveChatId();
 
     // ⭐ FIX: Always clear chatId when leaving (not just when typing)
     if (_currentUserId != null) {
