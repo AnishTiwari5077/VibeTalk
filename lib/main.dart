@@ -12,7 +12,6 @@ import 'services/notification_services.dart';
 import 'theme/app_theme.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // Ignore ZegoCloud offline push messages as they are handled automatically by Zego
@@ -26,7 +25,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   await Future.wait([dotenv.load(fileName: ".env"), Firebase.initializeApp()]);
   debugPrint("📬 Background message: ${message.messageId}");
-
 
   // Show local notification for regular messages
   await NotificationService.initializeForBackground();
