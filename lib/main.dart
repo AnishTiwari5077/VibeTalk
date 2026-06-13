@@ -15,16 +15,18 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Future.wait([dotenv.load(fileName: ".env"), Firebase.initializeApp()]);
-  debugPrint("📬 Background message: ${message.messageId}");
-
   // Ignore ZegoCloud offline push messages as they are handled automatically by Zego
+  // This must be done BEFORE Firebase/dotenv initialization to prevent the 20 sec delay
   if (message.data.containsKey('zego') ||
       message.data['resourceID'] == 'zego_call' ||
       message.data.containsKey('callID')) {
     debugPrint("📬 Ignoring Zego message in custom background handler.");
     return;
   }
+
+  await Future.wait([dotenv.load(fileName: ".env"), Firebase.initializeApp()]);
+  debugPrint("📬 Background message: ${message.messageId}");
+
 
   // Show local notification for regular messages
   await NotificationService.initializeForBackground();

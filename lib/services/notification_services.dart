@@ -20,6 +20,22 @@ class NotificationService {
       ? null
       : null; // Add API key to EnvConfig if needed
 
+  // Tracks which chatId the user is currently viewing.
+  // When set, foreground notifications for that chat are suppressed.
+  static String? _activeChatId;
+
+  /// Call this when the user enters a conversation screen.
+  static void setActiveChatId(String chatId) {
+    _activeChatId = chatId;
+    debugPrint('🔕 Notifications suppressed for chat: $chatId');
+  }
+
+  /// Call this when the user leaves a conversation screen.
+  static void clearActiveChatId() {
+    debugPrint('🔔 Notifications re-enabled (was: $_activeChatId)');
+    _activeChatId = null;
+  }
+
   // Callback for navigation when notification is tapped
   static Function(String chatId, String friendId, String friendUsername)?
   onNotificationTap;
@@ -121,6 +137,21 @@ class NotificationService {
 
   static Future<void> _handleForegroundMessage(RemoteMessage message) async {
     debugPrint('📩 Foreground message received: ${message.data}');
+
+    // Suppress notification if user is already viewing the chat that sent this message
+    final chatId = message.data['chatId'] as String?;
+    if (chatId != null && chatId == _activeChatId) {
+      debugPrint('🔕 Suppressing notification — user is in chat: $chatId');
+      return;
+    }
+
+    // Also suppress call-type notifications in foreground — ZEGOCLOUD handles those
+    final type = message.data['type'] as String?;
+    if (type == 'call') {
+      debugPrint('🔕 Suppressing call notification in foreground — ZEGOCLOUD handles it');
+      return;
+    }
+
     await showLocalNotification(message);
   }
 

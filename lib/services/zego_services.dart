@@ -4,6 +4,8 @@ import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 import 'package:zego_zpns/zego_zpns.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../core/env_config.dart';
+import '../providers/call_state_provider.dart';
+import '../screens/Calling/calling_screen.dart';
 
 class ZegoService {
   static int get appID => EnvConfig.zegoAppId;
@@ -64,6 +66,67 @@ class ZegoService {
       userID: userId,
       userName: userName,
       plugins: [ZegoUIKitSignalingPlugin()],
+      
+      // Wire up Riverpod state with Zego events
+      invitationEvents: ZegoUIKitPrebuiltCallInvitationEvents(
+        onOutgoingCallSent: (callID, caller, callType, callees, customData) {
+          globalCallStateController.updateState(CallState.calling);
+        },
+        onInvitationUserStateChanged: (userInfoList) {
+          for (var user in userInfoList) {
+            final stateStr = user.state.toString();
+            if (stateStr.contains('received') || stateStr.contains('notified')) {
+              globalCallStateController.updateState(CallState.ringing);
+            } else if (stateStr.contains('accepted')) {
+              globalCallStateController.updateState(CallState.connected);
+            } else if (stateStr.contains('rejected') || 
+                       stateStr.contains('cancelled')) {
+              globalCallStateController.updateState(CallState.ended);
+            }
+          }
+        },
+        onOutgoingCallAccepted: (callID, callee) {
+          globalCallStateController.updateState(CallState.connected);
+        },
+        onOutgoingCallDeclined: (callID, callee, customData) {
+          globalCallStateController.updateState(CallState.rejected);
+        },
+        onOutgoingCallRejectedCauseBusy: (callID, callee, customData) {
+          globalCallStateController.updateState(CallState.rejected);
+        },
+        onOutgoingCallTimeout: (callID, callees, isVideoCall) {
+          globalCallStateController.updateState(CallState.timeout);
+        },
+        onIncomingCallReceived: (callID, caller, callType, callees, customData) {
+          globalCallStateController.updateState(CallState.ringing);
+        },
+        onIncomingCallCanceled: (callID, caller, customData) {
+          globalCallStateController.updateState(CallState.ended);
+        },
+        onIncomingCallTimeout: (callID, caller) {
+          globalCallStateController.updateState(CallState.timeout);
+        },
+      ),
+
+      // Inject the custom Riverpod Calling UI
+      uiConfig: ZegoCallInvitationUIConfig(
+        inviter: ZegoCallInvitationInviterUIConfig(
+          pageBuilder: (context, callInvitationData) {
+            return CallingScreen(
+              callInvitationData: callInvitationData,
+              isCaller: true,
+            );
+          },
+        ),
+        invitee: ZegoCallInvitationInviteeUIConfig(
+          pageBuilder: (context, callInvitationData) {
+            return CallingScreen(
+              callInvitationData: callInvitationData,
+              isCaller: false,
+            );
+          },
+        ),
+      ),
       notificationConfig: ZegoCallInvitationNotificationConfig(
         androidNotificationConfig: ZegoCallAndroidNotificationConfig(
           showOnFullScreen: true,
@@ -71,6 +134,12 @@ class ZegoService {
           callChannel: ZegoCallAndroidNotificationChannelConfig(
             channelID: "ZegoUIKit",
             channelName: "Call Notifications",
+            sound: "ringtone",
+            icon: "notification_icon",
+          ),
+          missedCallChannel: ZegoCallAndroidNotificationChannelConfig(
+            channelID: "ZegoUIKitMissed",
+            channelName: "Missed Call Notifications",
             sound: "ringtone",
             icon: "notification_icon",
           ),
