@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
-// ignore: must_be_immutable
 class ReactionPicker extends StatelessWidget {
   final Function(String emoji) onReactionSelected;
 

@@ -1,5 +1,7 @@
 // lib/widgets/voice_message_bubble.dart
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 
@@ -31,6 +33,9 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
+  // Store subscriptions so they can be cancelled in dispose()
+  final List<StreamSubscription<dynamic>> _subscriptions = [];
+
   @override
   void initState() {
     super.initState();
@@ -38,24 +43,29 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   }
 
   void _initializePlayer() {
-    _audioPlayer.onDurationChanged.listen((duration) {
-      setState(() => _duration = duration);
-    });
-
-    _audioPlayer.onPositionChanged.listen((position) {
-      setState(() => _position = position);
-    });
-
-    _audioPlayer.onPlayerComplete.listen((event) {
-      setState(() {
-        _isPlaying = false;
-        _position = Duration.zero;
-      });
-    });
+    _subscriptions.addAll([
+      _audioPlayer.onDurationChanged.listen((duration) {
+        if (mounted) setState(() => _duration = duration);
+      }),
+      _audioPlayer.onPositionChanged.listen((position) {
+        if (mounted) setState(() => _position = position);
+      }),
+      _audioPlayer.onPlayerComplete.listen((_) {
+        if (mounted) {
+          setState(() {
+            _isPlaying = false;
+            _position = Duration.zero;
+          });
+        }
+      }),
+    ]);
   }
 
   @override
   void dispose() {
+    for (final sub in _subscriptions) {
+      sub.cancel();
+    }
     _audioPlayer.dispose();
     super.dispose();
   }

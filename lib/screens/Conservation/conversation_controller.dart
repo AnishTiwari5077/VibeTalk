@@ -281,13 +281,13 @@ class ConversationController {
 
   // Send voice message with notification
   Future<void> sendVoiceMessage(String audioPath, Duration duration) async {
+    final file = File(audioPath);
     try {
       final currentUser = ref.read(currentUserProvider).value;
       if (currentUser == null) return;
 
       if (kDebugMode) debugPrint('Uploading voice message...');
 
-      final file = File(audioPath);
       final audioUrl = await _storageRepo.uploadChatMedia(
         chatId: chatId,
         file: file,
@@ -304,10 +304,6 @@ class ConversationController {
         mediaUrl: audioUrl,
         fileName: '${duration.inSeconds}s',
       );
-
-      if (await file.exists()) {
-        await file.delete();
-      }
 
       // Send push notification
       await _sendPushNotification(
@@ -329,6 +325,13 @@ class ConversationController {
         );
       }
       rethrow;
+    } finally {
+      // Always clean up the temp file — even if upload or Firestore write failed.
+      try {
+        if (await file.exists()) await file.delete();
+      } catch (_) {
+        // Ignore cleanup errors; they're non-fatal.
+      }
     }
   }
 

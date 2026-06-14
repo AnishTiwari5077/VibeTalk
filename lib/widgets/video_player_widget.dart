@@ -17,7 +17,7 @@ class VideoPlayerWidget extends StatefulWidget {
 }
 
 class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
-  late VideoPlayerController _controller;
+  VideoPlayerController? _controller;
   bool _isInitialized = false;
   bool _hasError = false;
   bool _isPlaying = false;
@@ -32,35 +32,23 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     try {
       debugPrint('Initializing video player for: ${widget.videoUrl}');
 
-      // Check if it's a network URL or local file
-      if (widget.videoUrl.startsWith('http')) {
-        _controller = VideoPlayerController.networkUrl(
-          Uri.parse(widget.videoUrl),
-        );
-      } else {
-        _controller = VideoPlayerController.file(File(widget.videoUrl));
-      }
+      final controller = widget.videoUrl.startsWith('http')
+          ? VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
+          : VideoPlayerController.file(File(widget.videoUrl));
 
-      await _controller.initialize();
+      await controller.initialize();
+      controller.addListener(_onControllerUpdate);
 
       debugPrint('Video initialized successfully');
 
       if (mounted) {
         setState(() {
+          _controller = controller;
           _isInitialized = true;
         });
+      } else {
+        controller.dispose();
       }
-
-      _controller.addListener(() {
-        if (mounted) {
-          final isPlaying = _controller.value.isPlaying;
-          if (_isPlaying != isPlaying) {
-            setState(() {
-              _isPlaying = isPlaying;
-            });
-          }
-        }
-      });
     } catch (e) {
       debugPrint('Error initializing video: $e');
       if (mounted) {
@@ -71,18 +59,31 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     }
   }
 
+  void _onControllerUpdate() {
+    if (mounted && _controller != null) {
+      final isPlaying = _controller!.value.isPlaying;
+      if (_isPlaying != isPlaying) {
+        setState(() {
+          _isPlaying = isPlaying;
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.removeListener(_onControllerUpdate);
+    _controller?.dispose();
     super.dispose();
   }
 
   void _togglePlayPause() {
+    if (_controller == null) return;
     setState(() {
-      if (_controller.value.isPlaying) {
-        _controller.pause();
+      if (_controller!.value.isPlaying) {
+        _controller!.pause();
       } else {
-        _controller.play();
+        _controller!.play();
       }
     });
   }
@@ -153,8 +154,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           alignment: Alignment.center,
           children: [
             AspectRatio(
-              aspectRatio: _controller.value.aspectRatio,
-              child: VideoPlayer(_controller),
+              aspectRatio: _controller!.value.aspectRatio,
+              child: VideoPlayer(_controller!),
             ),
             // Play/Pause overlay
             Positioned.fill(
@@ -204,7 +205,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     VideoProgressIndicator(
-                      _controller,
+                      _controller!,
                       allowScrubbing: true,
                       colors: VideoProgressColors(
                         playedColor: Theme.of(context).colorScheme.primary,
@@ -217,14 +218,14 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          _formatDuration(_controller.value.position),
+                          _formatDuration(_controller!.value.position),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
                           ),
                         ),
                         Text(
-                          _formatDuration(_controller.value.duration),
+                          _formatDuration(_controller!.value.duration),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -243,7 +244,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
               child: GestureDetector(
                 onTap: () {
                   setState(() {
-                    _controller.setVolume(_controller.value.volume > 0 ? 0 : 1);
+                    _controller!.setVolume(_controller!.value.volume > 0 ? 0 : 1);
                   });
                 },
                 child: Container(
@@ -253,7 +254,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    _controller.value.volume > 0
+                    _controller!.value.volume > 0
                         ? Icons.volume_up_rounded
                         : Icons.volume_off_rounded,
                     color: Colors.white,

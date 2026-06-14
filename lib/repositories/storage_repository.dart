@@ -63,11 +63,12 @@ class StorageRepository {
         throw Exception('Image file does not exist');
       }
 
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
       final response = await _cloudinary.uploadFile(
         CloudinaryFile.fromFile(
           file.path,
           folder: 'avatars/$uid',
-          publicId: 'profile',
+          publicId: 'profile_$timestamp',
           resourceType: CloudinaryResourceType.Image,
         ),
       );

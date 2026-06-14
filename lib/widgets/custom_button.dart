@@ -26,6 +26,9 @@ class CustomButton extends StatelessWidget {
     if (outlined) {
       return OutlinedButton(
         onPressed: isLoading ? null : onPressed,
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(double.infinity, 52),
+        ),
         child: isLoading
             ? const SizedBox(
                 height: 20,

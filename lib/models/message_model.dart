@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 enum MessageType { text, image, video, file, voice }
 
 class MessageModel {
@@ -43,7 +45,7 @@ class MessageModel {
       'receiverId': receiverId,
       'content': content,
       'type': type.toString().split('.').last,
-      'timestamp': timestamp.toIso8601String(),
+      'timestamp': timestamp.millisecondsSinceEpoch,
       'isRead': isRead,
       'mediaUrl': mediaUrl,
       'fileName': fileName,
@@ -52,7 +54,7 @@ class MessageModel {
       'replyToContent': replyToContent,
       'replyToSenderId': replyToSenderId,
       'isEdited': isEdited,
-      'editedAt': editedAt?.toIso8601String(),
+      'editedAt': editedAt?.millisecondsSinceEpoch,
     };
   }
 
@@ -66,7 +68,7 @@ class MessageModel {
         (e) => e.toString().split('.').last == map['type'],
         orElse: () => MessageType.text,
       ),
-      timestamp: DateTime.parse(map['timestamp'] as String),
+      timestamp: _parseDateTime(map['timestamp']) ?? DateTime.now(),
       isRead: map['isRead'] as bool? ?? false,
       mediaUrl: map['mediaUrl'] as String?,
       fileName: map['fileName'] as String?,
@@ -82,10 +84,19 @@ class MessageModel {
       replyToContent: map['replyToContent'] as String?,
       replyToSenderId: map['replyToSenderId'] as String?,
       isEdited: map['isEdited'] as bool? ?? false,
-      editedAt: map['editedAt'] != null
-          ? DateTime.parse(map['editedAt'] as String)
-          : null,
+      editedAt: _parseDateTime(map['editedAt']),
     );
+  }
+
+  static DateTime? _parseDateTime(dynamic value) {
+    if (value == null) return null;
+    try {
+      if (value is Timestamp) return value.toDate();
+      if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+      if (value is double) return DateTime.fromMillisecondsSinceEpoch(value.toInt());
+      if (value is String) return DateTime.parse(value);
+    } catch (_) {}
+    return null;
   }
 
   MessageModel copyWith({

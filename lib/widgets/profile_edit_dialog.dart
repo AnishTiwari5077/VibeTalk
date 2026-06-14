@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:new_chart/core/error_handler.dart';
@@ -275,7 +276,7 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
     if (_newAvatar != null) {
       return FileImage(_newAvatar!) as ImageProvider;
     } else if (widget.user.avatarUrl != null) {
-      return NetworkImage(widget.user.avatarUrl!) as ImageProvider;
+      return CachedNetworkImageProvider(widget.user.avatarUrl!) as ImageProvider;
     }
     return null;
   }

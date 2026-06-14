@@ -39,7 +39,7 @@ class UserModel {
       'isOnline': isOnline,
       'lastSeen': lastSeen?.millisecondsSinceEpoch,
       'fcmToken': fcmToken,
-      'createdAt': createdAt.toIso8601String(),
+      'createdAt': createdAt.millisecondsSinceEpoch,
       'searchKeywords': searchKeywords,
       'blockedUsers': blockedUsers,
       'isTyping': isTyping,

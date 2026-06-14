@@ -72,7 +72,7 @@ class MessageService {
         .update({
           'content': newContent,
           'isEdited': true,
-          'editedAt': DateTime.now().toIso8601String(),
+          'editedAt': DateTime.now().millisecondsSinceEpoch,
         });
   }
 

@@ -93,6 +93,7 @@ final messagesProvider = StreamProvider.family<List<MessageModel>, String>((
             .doc(chatId)
             .collection('messages')
             .orderBy('timestamp', descending: true)
+            .limit(50) // Prevents ANR on low-end devices — pagination can be added later
             .snapshots()) {
       final stillAuthenticated = ref.read(currentUserProvider).value;
       if (stillAuthenticated == null) {
@@ -241,18 +242,24 @@ class ChatService {
 
   Future<void> clearConversation(String chatId) async {
     try {
-      final messages = await _firestore
-          .collection('chats')
-          .doc(chatId)
-          .collection('messages')
-          .limit(500)
-          .get();
+      // Delete all messages in batches of 500 until the collection is empty.
+      // A single .limit(500) batch silently leaves data behind in large chats.
+      while (true) {
+        final messages = await _firestore
+            .collection('chats')
+            .doc(chatId)
+            .collection('messages')
+            .limit(500)
+            .get();
 
-      final batch = _firestore.batch();
-      for (var doc in messages.docs) {
-        batch.delete(doc.reference);
+        if (messages.docs.isEmpty) break;
+
+        final batch = _firestore.batch();
+        for (var doc in messages.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
       }
-      await batch.commit();
 
       await _firestore.collection('chats').doc(chatId).update({
         'lastMessage': null,
