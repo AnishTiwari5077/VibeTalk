@@ -49,6 +49,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   String? _currentUserId;
 
   Timer? _typingTimer;
+  Timer? _typingDebounceTimer; // debounces the first typing Firestore write
   bool _isCurrentlyTyping = false;
 
   MessageModel? _replyToMessage;
@@ -90,6 +91,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     _messageController.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
+    _typingDebounceTimer?.cancel();
 
     // Re-enable foreground notifications when leaving the chat
     NotificationService.clearActiveChatId();
@@ -108,8 +110,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   void _onTextChanged() {
     if (_messageController.text.isNotEmpty && !_isCurrentlyTyping) {
-      _startTyping();
+      // Debounce: only fire the Firestore write after 300ms of continuous typing.
+      // This prevents rapid delete/retype from spamming Firestore.
+      _typingDebounceTimer?.cancel();
+      _typingDebounceTimer = Timer(const Duration(milliseconds: 300), _startTyping);
     } else if (_messageController.text.isEmpty && _isCurrentlyTyping) {
+      _typingDebounceTimer?.cancel();
       _stopTyping();
     }
 
@@ -629,130 +635,128 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     }
 
     return Scaffold(
-          backgroundColor: isDark
-              ? AppTheme.backgroundDark
-              : AppTheme.backgroundLight,
-          appBar: _buildAppBar(theme, isDark, friendAsync: friendAsync),
-          body: Column(
-            children: [
-              Expanded(
-                child: messagesAsync.when(
-                  data: (messages) {
-                    if (messages.isEmpty) {
-                      return EmptyMessagesView(
-                        friendUsername: widget.friend.username,
-                      );
-                    }
+      backgroundColor: isDark
+          ? AppTheme.backgroundDark
+          : AppTheme.backgroundLight,
+      appBar: _buildAppBar(theme, isDark, friendAsync: friendAsync),
+      body: Column(
+        children: [
+          Expanded(
+            child: messagesAsync.when(
+              data: (messages) {
+                if (messages.isEmpty) {
+                  return EmptyMessagesView(
+                    friendUsername: widget.friend.username,
+                  );
+                }
 
-                    return Column(
-                      children: [
-                        Expanded(
-                          child: ListView.builder(
-                            key: const PageStorageKey('messages_list'),
-                            controller: _scrollController,
-                            reverse: true,
-                            padding: const EdgeInsets.all(16),
-                            itemCount: messages.length,
-                            itemBuilder: (context, index) {
-                              final message = messages[index];
-                              final isMe = message.senderId == currentUser?.uid;
+                return Column(
+                  children: [
+                    Expanded(
+                      child: ListView.builder(
+                        key: const PageStorageKey('messages_list'),
+                        controller: _scrollController,
+                        reverse: true,
+                        padding: const EdgeInsets.all(16),
+                        itemCount: messages.length,
+                        itemBuilder: (context, index) {
+                          final message = messages[index];
+                          final isMe = message.senderId == currentUser?.uid;
 
-                              return SwipeToReply(
-                                key: ValueKey('swipe_${message.messageId}'),
-                                onReply: () => _setReplyMessage(
-                                  message,
-                                  isMe ? 'You' : widget.friend.username,
-                                ),
-                                isMe: isMe,
-                                child: MessageBubble(
-                                  key: ValueKey(message.messageId),
-                                  message: message,
-                                  isMe: isMe,
-                                  theme: theme,
-                                  isDark: isDark,
-                                  currentUserId: currentUser?.uid ?? '',
-                                  onReaction: _controller.addReaction,
-                                  onLongPress: _showMessageOptions,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        friendAsync.when(
-                          data: (friend) {
-                            if (friend != null &&
-                                friend.isTyping &&
-                                friend.typingInChatId == widget.chatId) {
-                              return TypingIndicator(isDark: isDark);
-                            }
-                            return const SizedBox.shrink();
-                          },
-                          loading: () => const SizedBox.shrink(),
-                          error: (_, _) => const SizedBox.shrink(),
-                        ),
-                      ],
-                    );
-                  },
-                  loading: () => Center(
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        theme.colorScheme.primary,
+                          return SwipeToReply(
+                            key: ValueKey('swipe_${message.messageId}'),
+                            onReply: () => _setReplyMessage(
+                              message,
+                              isMe ? 'You' : widget.friend.username,
+                            ),
+                            isMe: isMe,
+                            child: MessageBubble(
+                              key: ValueKey(message.messageId),
+                              message: message,
+                              isMe: isMe,
+                              theme: theme,
+                              isDark: isDark,
+                              currentUserId: currentUser?.uid ?? '',
+                              onReaction: _controller.addReaction,
+                              onLongPress: _showMessageOptions,
+                            ),
+                          );
+                        },
                       ),
                     ),
-                  ),
-                  error: (error, stack) => Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.error.withValues(
-                                alpha: .1,
-                              ),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.error_outline_rounded,
-                              size: 48,
-                              color: theme.colorScheme.error,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Text(
-                            'Unable to Load Messages',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            error.toString(),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: isDark
-                                  ? AppTheme.textSecondaryDark
-                                  : AppTheme.textSecondaryLight,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
+                    friendAsync.when(
+                      data: (friend) {
+                        if (friend != null &&
+                            friend.isTyping &&
+                            friend.typingInChatId == widget.chatId) {
+                          return TypingIndicator(isDark: isDark);
+                        }
+                        return const SizedBox.shrink();
+                      },
+                      loading: () => const SizedBox.shrink(),
+                      error: (_, _) => const SizedBox.shrink(),
                     ),
+                  ],
+                );
+              },
+              loading: () => Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    theme.colorScheme.primary,
                   ),
                 ),
               ),
-              if (_replyToMessage != null && _replyToSenderName != null)
-                ReplyPreview(
-                  replyToMessage: _replyToMessage!,
-                  senderName: _replyToSenderName!,
-                  onCancel: _cancelReply,
+              error: (error, stack) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.error.withValues(alpha: .1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.error_outline_rounded,
+                          size: 48,
+                          color: theme.colorScheme.error,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Unable to Load Messages',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        error.toString(),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: isDark
+                              ? AppTheme.textSecondaryDark
+                              : AppTheme.textSecondaryLight,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
                 ),
-              _buildMessageInput(theme, isDark),
-            ],
+              ),
+            ),
           ),
-        );
+          if (_replyToMessage != null && _replyToSenderName != null)
+            ReplyPreview(
+              replyToMessage: _replyToMessage!,
+              senderName: _replyToSenderName!,
+              onCancel: _cancelReply,
+            ),
+          _buildMessageInput(theme, isDark),
+        ],
+      ),
+    );
   }
 
   PreferredSizeWidget _buildAppBar(

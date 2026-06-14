@@ -1,6 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'core/env_config.dart';
 
 class FirebaseEnvOptions {
   static FirebaseOptions get currentPlatform {
@@ -19,21 +19,34 @@ class FirebaseEnvOptions {
   }
 
   static FirebaseOptions get android => FirebaseOptions(
-    apiKey: dotenv.env['FIREBASE_ANDROID_API_KEY']!,
-    appId: dotenv.env['FIREBASE_ANDROID_APP_ID']!,
-    messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID']!,
-    projectId: dotenv.env['FIREBASE_PROJECT_ID']!,
-    databaseURL: dotenv.env['FIREBASE_DATABASE_URL'],
-    storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET'],
+    apiKey: EnvConfig.firebaseAndroidApiKey,
+    appId: EnvConfig.firebaseAndroidAppId,
+    messagingSenderId: EnvConfig.firebaseSenderId,
+    projectId: EnvConfig.firebaseProjectId,
+    databaseURL: EnvConfig.firebaseDatabaseUrl.isNotEmpty
+        ? EnvConfig.firebaseDatabaseUrl
+        : null,
+    storageBucket: EnvConfig.firebaseStorageBucket.isNotEmpty
+        ? EnvConfig.firebaseStorageBucket
+        : null,
   );
 
+  // iOS keys are injected via --dart-define at build time just like Android.
+  static const _iosApiKey = String.fromEnvironment('FIREBASE_IOS_API_KEY');
+  static const _iosAppId = String.fromEnvironment('FIREBASE_IOS_APP_ID');
+  static const _iosBundleId = String.fromEnvironment('FIREBASE_IOS_BUNDLE_ID');
+
   static FirebaseOptions get ios => FirebaseOptions(
-    apiKey: dotenv.env['FIREBASE_IOS_API_KEY']!,
-    appId: dotenv.env['FIREBASE_IOS_APP_ID']!,
-    messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID']!,
-    projectId: dotenv.env['FIREBASE_PROJECT_ID']!,
-    databaseURL: dotenv.env['FIREBASE_DATABASE_URL'],
-    storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET'],
-    iosBundleId: dotenv.env['FIREBASE_IOS_BUNDLE_ID'],
+    apiKey: _iosApiKey,
+    appId: _iosAppId,
+    messagingSenderId: EnvConfig.firebaseSenderId,
+    projectId: EnvConfig.firebaseProjectId,
+    databaseURL: EnvConfig.firebaseDatabaseUrl.isNotEmpty
+        ? EnvConfig.firebaseDatabaseUrl
+        : null,
+    storageBucket: EnvConfig.firebaseStorageBucket.isNotEmpty
+        ? EnvConfig.firebaseStorageBucket
+        : null,
+    iosBundleId: _iosBundleId.isNotEmpty ? _iosBundleId : null,
   );
 }

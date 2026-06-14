@@ -1,6 +1,7 @@
 // lib/services/voice_recorder_service.dart
 
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -46,7 +47,7 @@ class VoiceRecorderService {
       _isRecording = true;
       return true;
     } catch (e) {
-      //   print('Error starting recording: $e');
+      debugPrint('Error starting recording: $e');
       return false;
     }
   }
@@ -57,7 +58,7 @@ class VoiceRecorderService {
       _isRecording = false;
       return path;
     } catch (e) {
-      //  print('Error stopping recording: $e');
+      debugPrint('Error stopping recording: $e');
       return null;
     }
   }
@@ -75,7 +76,7 @@ class VoiceRecorderService {
       }
       _recordingPath = null;
     } catch (e) {
-      //  print('Error canceling recording: $e');
+      debugPrint('Error canceling recording: $e');
     }
   }
 

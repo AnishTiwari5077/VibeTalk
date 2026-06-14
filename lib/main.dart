@@ -10,7 +10,7 @@ import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 import 'services/notification_services.dart';
 import 'theme/app_theme.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -23,7 +23,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     return;
   }
 
-  await Future.wait([dotenv.load(fileName: ".env"), Firebase.initializeApp()]);
+  await Firebase.initializeApp();
   debugPrint("📬 Background message: ${message.messageId}");
 
   // Show local notification for regular messages
@@ -34,7 +34,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Future.wait([dotenv.load(fileName: ".env"), Firebase.initializeApp()]);
+  await Firebase.initializeApp();
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   await NotificationService.initialize();

@@ -19,7 +19,7 @@ class FriendRequest {
       'senderId': senderId,
       'receiverId': receiverId,
       'status': status,
-      'timestamp': timestamp.toIso8601String(),
+      'timestamp': timestamp.millisecondsSinceEpoch,
     };
   }
 
@@ -29,7 +29,15 @@ class FriendRequest {
       senderId: map['senderId'] as String,
       receiverId: map['receiverId'] as String,
       status: map['status'] as String,
-      timestamp: DateTime.parse(map['timestamp'] as String),
+      timestamp: _parseTimestamp(map['timestamp']),
     );
+  }
+
+  static DateTime _parseTimestamp(dynamic value) {
+    try {
+      if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+      if (value is String) return DateTime.parse(value);
+    } catch (_) {}
+    return DateTime.now();
   }
 }

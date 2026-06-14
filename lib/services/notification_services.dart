@@ -1,6 +1,7 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -11,14 +12,18 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
 
-  static late AndroidNotificationChannel _channel;
+  static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
+    'chat_channel',
+    'Chat Notifications',
+    description: 'Notifications for chat messages',
+    importance: Importance.high,
+    playSound: true,
+    enableVibration: true,
+  );
   static bool _isInitialized = false;
 
   // Get backend URL from environment config
   static String get _backendUrl => EnvConfig.notificationBackendUrl;
-  static String? get _apiKey => EnvConfig.notificationBackendUrl.isNotEmpty
-      ? null
-      : null; // Add API key to EnvConfig if needed
 
   // Tracks which chatId the user is currently viewing.
   // When set, foreground notifications for that chat are suppressed.
@@ -56,15 +61,6 @@ class NotificationService {
         debugPrint('❌ Notification permission denied');
         return;
       }
-
-      _channel = const AndroidNotificationChannel(
-        'chat_channel',
-        'Chat Notifications',
-        description: 'Notifications for chat messages',
-        importance: Importance.high,
-        playSound: true,
-        enableVibration: true,
-      );
 
       await _localNotifications
           .resolvePlatformSpecificImplementation<
@@ -114,15 +110,6 @@ class NotificationService {
   // Lightweight init for killed-state background isolates.
   // Skips requestPermission() which can stall when there is no Activity context.
   static Future<void> initializeForBackground() async {
-    _channel = const AndroidNotificationChannel(
-      'chat_channel',
-      'Chat Notifications',
-      description: 'Notifications for chat messages',
-      importance: Importance.high,
-      playSound: true,
-      enableVibration: true,
-    );
-
     await _localNotifications
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -247,9 +234,20 @@ class NotificationService {
     }
   }
 
-  static Future<void> _handleTokenRefresh(String token) async {
-    debugPrint('🔄 Token refreshed: $token');
-    // Token will be updated when user logs in through auth_repository
+  static Future<void> _handleTokenRefresh(String newToken) async {
+    debugPrint('FCM token refreshed — updating Firestore');
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser != null) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .update({'fcmToken': newToken});
+        debugPrint('FCM token updated in Firestore for: ${currentUser.uid}');
+      }
+    } catch (e) {
+      debugPrint('Failed to update FCM token in Firestore: $e');
+    }
   }
 
   static Future<bool> sendMessageNotification({
@@ -261,18 +259,13 @@ class NotificationService {
   }) async {
     try {
       if (_backendUrl.isEmpty) {
-        debugPrint('❌ Backend URL not configured in .env');
-        debugPrint('   Please add NOTIFICATION_BACKEND_URL to your .env file');
+        debugPrint('Backend URL not configured — set NOTIFICATION_BACKEND_URL in dart_defines.json');
         return false;
       }
 
       debugPrint('📤 Sending notification to backend: $_backendUrl');
 
       final headers = <String, String>{'Content-Type': 'application/json'};
-
-      if (_apiKey != null && _apiKey!.isNotEmpty) {
-        headers['x-api-key'] = _apiKey!;
-      }
 
       final payload = {
         'token': receiverToken,
@@ -304,13 +297,10 @@ class NotificationService {
         return false;
       }
     } catch (e) {
-      debugPrint('❌ Error sending notification: $e');
+      debugPrint('Error sending notification: $e');
       if (e.toString().contains('SocketException') ||
           e.toString().contains('Connection')) {
-        debugPrint('   💡 Check that:');
-        debugPrint('   1. Backend server is running (node server.js)');
-        debugPrint('   2. Backend URL in .env is correct: $_backendUrl');
-        debugPrint('   3. Device can reach the server (same network)');
+        debugPrint('  Check: backend is running, NOTIFICATION_BACKEND_URL in dart_defines.json is correct, device is on same network');
       }
       return false;
     }
@@ -329,10 +319,6 @@ class NotificationService {
       }
 
       final headers = <String, String>{'Content-Type': 'application/json'};
-
-      if (_apiKey != null && _apiKey!.isNotEmpty) {
-        headers['x-api-key'] = _apiKey!;
-      }
 
       final payload = {
         'token': token,

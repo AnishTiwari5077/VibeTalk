@@ -47,8 +47,8 @@ class _SwipeToReplyState extends State<SwipeToReply> {
     _dragStarted = false;
 
     if (_dragExtent >= _kSwipeThreshold) {
-      widget.onReply();
       HapticFeedback.mediumImpact();
+      widget.onReply();
     }
 
     setState(() {

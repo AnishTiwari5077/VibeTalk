@@ -69,15 +69,6 @@ class AuthRepository {
             .collection('users')
             .doc(credential.user!.uid)
             .set(userModel.toMap());
-
-        final doc = await _firestore
-            .collection('users')
-            .doc(credential.user!.uid)
-            .get();
-
-        if (!doc.exists) {
-          throw Exception('Failed to create user document in Firestore');
-        }
       }
 
       return credential;

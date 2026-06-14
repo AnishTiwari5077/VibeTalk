@@ -66,36 +66,45 @@ class UserRepository {
     }
   }
 
-  Future<bool> isUserBlocked(String currentUserId, String otherUserId) async {
+  /// Check both block directions in parallel.
+  /// Returns (iBlockedThem, theyBlockedMe).
+  Future<(bool, bool)> checkBlockStatus(
+    String currentUserId,
+    String otherUserId,
+  ) async {
     try {
-      final userDoc = await _firestore
-          .collection('users')
-          .doc(currentUserId)
-          .get();
-      final userData = userDoc.data();
-      if (userData == null) return false;
+      final results = await Future.wait([
+        _firestore.collection('users').doc(currentUserId).get(),
+        _firestore.collection('users').doc(otherUserId).get(),
+      ]);
 
-      final blockedUsers = List<String>.from(userData['blockedUsers'] ?? []);
-      return blockedUsers.contains(otherUserId);
+      final myData = results[0].data();
+      final theirData = results[1].data();
+
+      final iBlockedThem =
+          myData != null &&
+          List<String>.from(myData['blockedUsers'] ?? []).contains(otherUserId);
+
+      final theyBlockedMe =
+          theirData != null &&
+          List<String>.from(theirData['blockedUsers'] ?? []).contains(
+            currentUserId,
+          );
+
+      return (iBlockedThem, theyBlockedMe);
     } catch (e) {
-      return false;
+      return (false, false);
     }
   }
 
-  Future<bool> isBlockedByUser(String currentUserId, String otherUserId) async {
-    try {
-      final userDoc = await _firestore
-          .collection('users')
-          .doc(otherUserId)
-          .get();
-      final userData = userDoc.data();
-      if (userData == null) return false;
+  Future<bool> isUserBlocked(String currentUserId, String otherUserId) async {
+    final (iBlockedThem, _) = await checkBlockStatus(currentUserId, otherUserId);
+    return iBlockedThem;
+  }
 
-      final blockedUsers = List<String>.from(userData['blockedUsers'] ?? []);
-      return blockedUsers.contains(currentUserId);
-    } catch (e) {
-      return false;
-    }
+  Future<bool> isBlockedByUser(String currentUserId, String otherUserId) async {
+    final (_, theyBlockedMe) = await checkBlockStatus(currentUserId, otherUserId);
+    return theyBlockedMe;
   }
 
   Future<UserModel?> getUser(String uid) async {

@@ -66,21 +66,34 @@ class FriendRequestService {
       });
 
       final chatId = _generateChatId(currentUser.uid, senderId);
+
+      // Fetch sender data — needed for both participantsData and the notification.
+      final senderDoc = await _firestore.collection('users').doc(senderId).get();
+      final senderData = senderDoc.exists
+          ? UserModel.fromMap(senderDoc.data()!)
+          : null;
+
       await _firestore.collection('chats').doc(chatId).set({
         'chatId': chatId,
         'participants': [currentUser.uid, senderId],
+        // participantsData prevents a per-render fallback fetch in ChatListScreen.
+        'participantsData': {
+          currentUser.uid: {
+            'username': currentUser.username,
+            'avatarUrl': currentUser.avatarUrl,
+          },
+          senderId: {
+            'username': senderData?.username ?? '',
+            'avatarUrl': senderData?.avatarUrl ?? '',
+          },
+        },
         'lastMessage': null,
         'lastMessageTime': null,
         'unreadCount': {currentUser.uid: 0, senderId: 0},
         'lastMessageType': null,
       });
 
-      final senderDoc = await _firestore
-          .collection('users')
-          .doc(senderId)
-          .get();
-      if (senderDoc.exists) {
-        final senderData = UserModel.fromMap(senderDoc.data()!);
+      if (senderData != null) {
         await NotificationService.sendNotification(
           token: senderData.fcmToken,
           title: 'Friend Request Accepted',
@@ -126,20 +139,22 @@ class FriendRequestService {
       }
       await batch.commit();
 
-      final requestBatch = _firestore.batch();
-      
-      // Fetch only requests where currentUser or friend is the sender
-      // This prevents a global table scan of all accepted requests
-      final query1 = await _firestore
-          .collection('friendRequests')
-          .where('senderId', isEqualTo: currentUser.uid)
-          .get();
-          
-      final query2 = await _firestore
-          .collection('friendRequests')
-          .where('senderId', isEqualTo: friendId)
-          .get();
+      // Run both queries in parallel — halves Firestore round-trip time.
+      final results = await Future.wait([
+        _firestore
+            .collection('friendRequests')
+            .where('senderId', isEqualTo: currentUser.uid)
+            .get(),
+        _firestore
+            .collection('friendRequests')
+            .where('senderId', isEqualTo: friendId)
+            .get(),
+      ]);
 
+      final query1 = results[0];
+      final query2 = results[1];
+
+      final requestBatch = _firestore.batch();
       for (var doc in query1.docs) {
         if (doc.data()['receiverId'] == friendId) requestBatch.delete(doc.reference);
       }
