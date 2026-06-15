@@ -1,4 +1,4 @@
-package com.example.new_chart
+package com.anish.vibetalk
 
 import android.content.Intent
 import android.os.Build
@@ -32,4 +32,3 @@ class MainActivity : FlutterFragmentActivity() {
         setIntent(intent)
     }
 }
-

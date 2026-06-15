@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:new_chart/providers/friend_req_provider.dart';
-import 'package:new_chart/screens/chart_list_screen.dart';
-import 'package:new_chart/screens/profile_screen.dart';
-import 'package:new_chart/screens/reqest_screen.dart';
-import 'package:new_chart/screens/user_list_screen.dart';
+import 'package:vibetalk/providers/friend_req_provider.dart';
+import 'package:vibetalk/screens/chart_list_screen.dart';
+import 'package:vibetalk/screens/profile_screen.dart';
+import 'package:vibetalk/screens/reqest_screen.dart';
+import 'package:vibetalk/screens/user_list_screen.dart';
 
 import '../theme/app_theme.dart';
 

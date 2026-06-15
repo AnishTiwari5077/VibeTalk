@@ -1,9 +1,9 @@
 // lib/screens/conversation/widgets/message_options_sheet.dart
 
 import 'package:flutter/material.dart';
-import 'package:new_chart/models/message_model.dart';
-import 'package:new_chart/theme/app_theme.dart';
-import 'package:new_chart/widgets/reaction_picker.dart';
+import 'package:vibetalk/models/message_model.dart';
+import 'package:vibetalk/theme/app_theme.dart';
+import 'package:vibetalk/widgets/reaction_picker.dart';
 
 class MessageOptionsSheet extends StatelessWidget {
   final MessageModel message;

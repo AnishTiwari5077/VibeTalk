@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 
-import 'package:new_chart/providers/auth_provider.dart';
-import 'package:new_chart/providers/chart_provider.dart';
-import 'package:new_chart/providers/friend_req_provider.dart';
-import 'package:new_chart/providers/user_provider.dart';
-import 'package:new_chart/screens/Authstate/error_screen.dart';
-import 'package:new_chart/screens/home_screen.dart';
-import 'package:new_chart/screens/sign_screen.dart';
-import 'package:new_chart/screens/splash_screen.dart';
-import 'package:new_chart/services/zego_services.dart';
+import 'package:vibetalk/providers/auth_provider.dart';
+import 'package:vibetalk/providers/chart_provider.dart';
+import 'package:vibetalk/providers/friend_req_provider.dart';
+import 'package:vibetalk/providers/user_provider.dart';
+import 'package:vibetalk/screens/Authstate/error_screen.dart';
+import 'package:vibetalk/screens/home_screen.dart';
+import 'package:vibetalk/screens/sign_screen.dart';
+import 'package:vibetalk/screens/splash_screen.dart';
+import 'package:vibetalk/services/zego_services.dart';
 
 class AuthenticationWrapper extends ConsumerStatefulWidget {
   const AuthenticationWrapper({super.key});

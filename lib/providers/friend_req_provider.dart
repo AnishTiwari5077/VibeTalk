@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:new_chart/services/notification_services.dart';
+import 'package:vibetalk/services/notification_services.dart';
 import 'package:uuid/uuid.dart';
 import '../models/friend_request_model.dart';
 import '../models/user_model.dart';

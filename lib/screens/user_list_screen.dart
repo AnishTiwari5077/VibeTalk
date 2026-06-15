@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:new_chart/core/error_handler.dart';
-import 'package:new_chart/providers/chart_provider.dart';
-import 'package:new_chart/providers/friend_req_provider.dart';
-import 'package:new_chart/widgets/empty_state.dart';
-import 'package:new_chart/widgets/user_avatar.dart';
+import 'package:vibetalk/core/error_handler.dart';
+import 'package:vibetalk/providers/chart_provider.dart';
+import 'package:vibetalk/providers/friend_req_provider.dart';
+import 'package:vibetalk/widgets/empty_state.dart';
+import 'package:vibetalk/widgets/user_avatar.dart';
 
 import '../../theme/app_theme.dart';
 
