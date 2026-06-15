@@ -78,7 +78,7 @@ class CallingScreen extends StatelessWidget {
                             ),
                             const SizedBox(width: 8),
                             const Text(
-                              "ZEGOCLOUD CALL",
+                              "VibeTalk",
                               style: TextStyle(
                                 color: Colors.white70,
                                 letterSpacing: 2,
@@ -165,11 +165,15 @@ class CallingScreen extends StatelessWidget {
         _buildCircleButton(
           icon: Icons.call_end,
           color: Colors.red,
-          onPressed: () {
+          onPressed: () async {
             final callees = callInvitationData.invitees
                 .map((u) => ZegoCallUser(u.id, u.name))
                 .toList();
-            ZegoUIKitPrebuiltCallInvitationService().cancel(callees: callees);
+            // Cancel the outgoing invitation on ZEGOCLOUD's side
+            await ZegoUIKitPrebuiltCallInvitationService()
+                .cancel(callees: callees);
+            // Then dismiss this screen so the UI doesn't get stuck
+            if (context.mounted) Navigator.of(context).pop();
           },
         ),
       ],
@@ -183,8 +187,10 @@ class CallingScreen extends StatelessWidget {
         _buildCircleButton(
           icon: Icons.call_end,
           color: Colors.red,
-          onPressed: () {
-            ZegoUIKitPrebuiltCallInvitationService().reject();
+          onPressed: () async {
+            await ZegoUIKitPrebuiltCallInvitationService().reject();
+            // Dismiss the ringing screen after rejecting
+            if (context.mounted) Navigator.of(context).pop();
           },
         ),
         _buildCircleButton(

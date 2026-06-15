@@ -130,18 +130,22 @@ class ZegoService {
         ),
       ),
       notificationConfig: ZegoCallInvitationNotificationConfig(
+        // ⭐ resourceID MUST match what is configured in ZEGOCLOUD console.
+        // This tells ZEGOCLOUD to use the high-priority offline push channel
+        // (FCM data-only message with priority=high) instead of the low-priority
+        // normal channel — fixing the 10-20 second delivery delay.
         androidNotificationConfig: ZegoCallAndroidNotificationConfig(
           showOnFullScreen: true,
           showOnLockedScreen: true,
           callChannel: ZegoCallAndroidNotificationChannelConfig(
             channelID: "ZegoUIKit",
-            channelName: "Call Notifications",
+            channelName: "VibeTalk Calls",
             sound: "ringtone",
             icon: "notification_icon",
           ),
           missedCallChannel: ZegoCallAndroidNotificationChannelConfig(
             channelID: "ZegoUIKitMissed",
-            channelName: "Missed Call Notifications",
+            channelName: "VibeTalk Missed Calls",
             sound: "ringtone",
             icon: "notification_icon",
           ),
