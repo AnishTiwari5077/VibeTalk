@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:new_chart/models/chart_model.dart';
 
-import 'package:new_chart/services/message_service.dart';
 import 'package:uuid/uuid.dart';
+import 'package:vibetalk/models/chart_model.dart';
+import 'package:vibetalk/services/message_service.dart';
 import '../models/message_model.dart';
 import '../models/user_model.dart';
 import 'auth_provider.dart';
@@ -93,7 +93,9 @@ final messagesProvider = StreamProvider.family<List<MessageModel>, String>((
             .doc(chatId)
             .collection('messages')
             .orderBy('timestamp', descending: true)
-            .limit(50) // Prevents ANR on low-end devices — pagination can be added later
+            .limit(
+              50,
+            ) // Prevents ANR on low-end devices — pagination can be added later
             .snapshots()) {
       final stillAuthenticated = ref.read(currentUserProvider).value;
       if (stillAuthenticated == null) {
@@ -165,13 +167,17 @@ class ChatService {
       }
 
       final messageId = _uuid.v4();
+      // Use client time only for the local MessageModel object (optimistic UI).
+      // The actual Firestore document uses FieldValue.serverTimestamp() so
+      // ordering is always based on the server clock — not device clocks.
+      final clientNow = DateTime.now();
       final message = MessageModel(
         messageId: messageId,
         senderId: currentUser.uid,
         receiverId: receiverId,
         content: content,
         type: type,
-        timestamp: DateTime.now(),
+        timestamp: clientNow,
         isRead: false,
         mediaUrl: mediaUrl,
         replyToMessageId: replyToMessageId,
@@ -187,16 +193,20 @@ class ChatService {
           .collection('messages')
           .doc(messageId);
 
-      batch.set(messageRef, message.toMap());
+      // Write to Firestore with SERVER timestamp for correct ordering.
+      final messageData = message.toMap()
+        ..['timestamp'] = FieldValue.serverTimestamp();
+      batch.set(messageRef, messageData);
 
       final chatRef = _firestore.collection('chats').doc(chatId);
       batch.update(chatRef, {
         'lastMessage': _getLastMessagePreview(type, content),
-        'lastMessageTime': message.timestamp.millisecondsSinceEpoch,
+        // Use server timestamp for the chat's last-message time too.
+        'lastMessageTime': FieldValue.serverTimestamp(),
         'lastMessageType': type.toString().split('.').last,
         'lastMessageSenderId': currentUser.uid,
         'unreadCount.$receiverId': FieldValue.increment(1),
-        'updatedAt': message.timestamp.millisecondsSinceEpoch,
+        'updatedAt': FieldValue.serverTimestamp(),
       });
 
       await batch.commit();
@@ -265,7 +275,7 @@ class ChatService {
         'lastMessage': null,
         'lastMessageTime': null,
         'lastMessageType': null,
-        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+        'updatedAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
       rethrow;
@@ -330,8 +340,8 @@ class ChatService {
           'lastMessageType': null,
           'lastMessageSenderId': null,
           'unreadCount': {currentUser.uid: 0, otherUserId: 0},
-          'createdAt': DateTime.now().millisecondsSinceEpoch,
-          'updatedAt': DateTime.now().millisecondsSinceEpoch,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
         });
       }
 

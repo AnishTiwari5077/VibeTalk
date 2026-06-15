@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:new_chart/core/error_handler.dart';
-import 'package:new_chart/core/validator.dart';
-import 'package:new_chart/widgets/custom_text_field.dart';
-import 'package:new_chart/widgets/loading_overlay.dart';
+import 'package:vibetalk/core/error_handler.dart';
+import 'package:vibetalk/core/validator.dart';
+import 'package:vibetalk/widgets/custom_text_field.dart';
+import 'package:vibetalk/widgets/loading_overlay.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';

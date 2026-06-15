@@ -4,26 +4,26 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:new_chart/core/date_formattor.dart';
+import 'package:vibetalk/core/date_formattor.dart';
 
-import 'package:new_chart/models/message_model.dart';
-import 'package:new_chart/models/user_model.dart';
-import 'package:new_chart/providers/auth_provider.dart';
-import 'package:new_chart/providers/chart_provider.dart';
-import 'package:new_chart/providers/user_provider.dart';
-import 'package:new_chart/screens/Conservation/conversation_controller.dart';
-import 'package:new_chart/services/notification_services.dart';
+import 'package:vibetalk/models/message_model.dart';
+import 'package:vibetalk/models/user_model.dart';
+import 'package:vibetalk/providers/auth_provider.dart';
+import 'package:vibetalk/providers/chart_provider.dart';
+import 'package:vibetalk/providers/user_provider.dart';
+import 'package:vibetalk/screens/Conservation/conversation_controller.dart';
+import 'package:vibetalk/services/notification_services.dart';
 
-import 'package:new_chart/theme/app_theme.dart';
-import 'package:new_chart/widgets/block_user_view.dart';
-import 'package:new_chart/widgets/empty_message_view.dart';
-import 'package:new_chart/widgets/message_bubble.dart';
-import 'package:new_chart/widgets/message_option_sheet.dart';
-import 'package:new_chart/widgets/reply_preview.dart';
-import 'package:new_chart/widgets/swipe_to_reply.dart';
-import 'package:new_chart/widgets/typing_indicator.dart';
-import 'package:new_chart/widgets/user_avatar.dart';
-import 'package:new_chart/widgets/voice_recorder_button.dart';
+import 'package:vibetalk/theme/app_theme.dart';
+import 'package:vibetalk/widgets/block_user_view.dart';
+import 'package:vibetalk/widgets/empty_message_view.dart';
+import 'package:vibetalk/widgets/message_bubble.dart';
+import 'package:vibetalk/widgets/message_option_sheet.dart';
+import 'package:vibetalk/widgets/reply_preview.dart';
+import 'package:vibetalk/widgets/swipe_to_reply.dart';
+import 'package:vibetalk/widgets/typing_indicator.dart';
+import 'package:vibetalk/widgets/user_avatar.dart';
+import 'package:vibetalk/widgets/voice_recorder_button.dart';
 
 class ConversationScreen extends ConsumerStatefulWidget {
   final String chatId;

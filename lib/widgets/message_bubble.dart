@@ -2,13 +2,13 @@
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:new_chart/core/date_formattor.dart';
-import 'package:new_chart/models/message_model.dart';
-import 'package:new_chart/screens/full_screen_viewer.dart';
-import 'package:new_chart/theme/app_theme.dart';
-import 'package:new_chart/widgets/message_reactions.dart';
-import 'package:new_chart/widgets/video_player_widget.dart';
-import 'package:new_chart/widgets/voice_message_bubble.dart';
+import 'package:vibetalk/core/date_formattor.dart';
+import 'package:vibetalk/models/message_model.dart';
+import 'package:vibetalk/screens/full_screen_viewer.dart';
+import 'package:vibetalk/theme/app_theme.dart';
+import 'package:vibetalk/widgets/message_reactions.dart';
+import 'package:vibetalk/widgets/video_player_widget.dart';
+import 'package:vibetalk/widgets/voice_message_bubble.dart';
 
 class MessageBubble extends StatelessWidget {
   final MessageModel message;

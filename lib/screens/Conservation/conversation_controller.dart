@@ -7,14 +7,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 
-import 'package:new_chart/core/error_handler.dart';
-import 'package:new_chart/providers/chart_provider.dart';
-import 'package:new_chart/repositories/user_repository.dart';
-import 'package:new_chart/services/image_service.dart';
-import 'package:new_chart/services/message_service.dart';
+import 'package:vibetalk/core/error_handler.dart';
+import 'package:vibetalk/providers/chart_provider.dart';
+import 'package:vibetalk/repositories/user_repository.dart';
+import 'package:vibetalk/services/image_service.dart';
+import 'package:vibetalk/services/message_service.dart';
 
-import 'package:new_chart/services/notification_services.dart';
-import 'package:new_chart/services/zego_services.dart';
+import 'package:vibetalk/services/notification_services.dart';
+import 'package:vibetalk/services/zego_services.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import '../../models/user_model.dart';
 import '../../models/message_model.dart';

@@ -3,14 +3,14 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:new_chart/core/error_handler.dart';
-import 'package:new_chart/core/validator.dart';
-import 'package:new_chart/models/user_model.dart';
-import 'package:new_chart/providers/auth_provider.dart';
-import 'package:new_chart/services/image_service.dart';
-import 'package:new_chart/theme/app_theme.dart';
-import 'package:new_chart/widgets/loading_overlay.dart';
-import 'package:new_chart/core/cloudinary_config.dart';
+import 'package:vibetalk/core/error_handler.dart';
+import 'package:vibetalk/core/validator.dart';
+import 'package:vibetalk/models/user_model.dart';
+import 'package:vibetalk/providers/auth_provider.dart';
+import 'package:vibetalk/services/image_service.dart';
+import 'package:vibetalk/theme/app_theme.dart';
+import 'package:vibetalk/widgets/loading_overlay.dart';
+import 'package:vibetalk/core/cloudinary_config.dart';
 
 class EditProfileDialog extends ConsumerStatefulWidget {
   final UserModel user;

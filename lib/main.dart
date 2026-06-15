@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:new_chart/screens/Authstate/auth_wrapper.dart';
-import 'package:new_chart/screens/Conservation/conversation_screen.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:vibetalk/screens/Authstate/auth_wrapper.dart';
+import 'package:vibetalk/screens/Conservation/conversation_screen.dart';
 
-import 'package:new_chart/models/user_model.dart';
+import 'package:vibetalk/models/user_model.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 import 'services/notification_services.dart';
@@ -31,10 +32,29 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await NotificationService.showLocalNotification(message);
 }
 
+/// Requests mic, camera, and Bluetooth permissions needed for ZEGOCLOUD calls.
+/// Must be called before [ZegoUIKitPrebuiltCallInvitationService] initializes
+/// so the OS grants them before the first call attempt.
+Future<void> _requestCallPermissions() async {
+  final statuses = await [
+    Permission.microphone,
+    Permission.camera,
+    Permission.bluetoothConnect, // required on Android 12+
+  ].request();
+
+  statuses.forEach((permission, status) {
+    debugPrint('🔐 $permission: $status');
+  });
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp();
+
+  // ⭐ Request mic/camera/Bluetooth BEFORE ZEGOCLOUD init so first-launch
+  // calls work without requiring the user to restart the app.
+  await _requestCallPermissions();
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   await NotificationService.initialize();

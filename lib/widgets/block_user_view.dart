@@ -1,7 +1,7 @@
 // lib/screens/conversation/widgets/blocked_user_view.dart
 
 import 'package:flutter/material.dart';
-import 'package:new_chart/theme/app_theme.dart';
+import 'package:vibetalk/theme/app_theme.dart';
 
 class BlockedUserView extends StatelessWidget {
   final String username;

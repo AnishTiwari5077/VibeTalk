@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:new_chart/core/date_formattor.dart';
-import 'package:new_chart/models/chart_model.dart';
-import 'package:new_chart/providers/chart_provider.dart';
+import 'package:vibetalk/core/date_formattor.dart';
+import 'package:vibetalk/models/chart_model.dart';
+import 'package:vibetalk/providers/chart_provider.dart';
 
-import 'package:new_chart/screens/Conservation/conversation_screen.dart';
-import 'package:new_chart/widgets/empty_state.dart';
-import 'package:new_chart/widgets/user_avatar.dart';
+import 'package:vibetalk/screens/Conservation/conversation_screen.dart';
+import 'package:vibetalk/widgets/empty_state.dart';
+import 'package:vibetalk/widgets/user_avatar.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../models/user_model.dart';

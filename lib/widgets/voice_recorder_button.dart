@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:new_chart/services/voice_recorder_services.dart';
+import 'package:vibetalk/services/voice_recorder_services.dart';
 
 class VoiceRecorderButton extends StatefulWidget {
   final Function(String audioPath, Duration duration) onRecordingComplete;
