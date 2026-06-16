@@ -119,191 +119,234 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 parent: AlwaysScrollableScrollPhysics(),
               ),
               slivers: [
-                // ── Gradient header ──
-                SliverAppBar(
-                  expandedHeight: 200,
-                  pinned: true,
-                  stretch: true,
-                  backgroundColor: theme.colorScheme.primary,
-                  elevation: 0,
-                  actions: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.logout_outlined,
-                        color: Colors.white,
-                      ),
-                      onPressed: _isLoading ? null : _logout,
-                      tooltip: 'Logout',
-                    ),
-                  ],
-                  flexibleSpace: FlexibleSpaceBar(
-                    stretchModes: const [StretchMode.zoomBackground],
-                    background: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            theme.colorScheme.primary,
-                            theme.colorScheme.primary.withValues(alpha: 0.7),
-                            theme.colorScheme.secondary,
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                // ── Content ──
+                // ── Header with overlapping avatar ──────────────────────────
+                // We use a plain SliverToBoxAdapter + Stack(clipBehavior.none)
+                // instead of SliverAppBar so the avatar is never clipped.
                 SliverToBoxAdapter(
-                  child: Column(
+                  child: Stack(
+                    clipBehavior: Clip.none, // allow avatar to overflow header
                     children: [
-                      // Avatar scrolls with content, overlapping the header bottom.
-                      // Transform.translate(-avatarRadius) pulls it up by exactly
-                      // half its height so it straddles the header/content boundary.
-                      Transform.translate(
-                        offset: const Offset(0, -ProfileConstants.avatarRadius),
-                        child: Center(child: _buildAvatarWidget(user, theme)),
-                      ),
-
-                      // Negative margin compensates for the upward translate so
-                      // subsequent content isn't pushed down by a gap.
-                      // Transform.translate is purely visual and does not affect
-                      // layout, so no gap compensation is needed here.
-                      // A negative SizedBox height causes BoxConstraints errors.
-                      const SizedBox(height: 0),
-
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: ProfileConstants.spacing,
+                      // ── Gradient header container ──
+                      Container(
+                        height: 220,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              theme.colorScheme.primary,
+                              theme.colorScheme.primary.withValues(alpha: 0.85),
+                              theme.colorScheme.secondary,
+                            ],
+                          ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
+                        child: Stack(
                           children: [
-                            // Username
-                            Text(
-                              user.username,
-                              style: theme.textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: -0.5,
-                                color: isDark
-                                    ? AppTheme.textPrimaryDark
-                                    : AppTheme.textPrimaryLight,
+                            // Decorative circles for depth
+                            Positioned(
+                              top: -30,
+                              left: -30,
+                              child: Container(
+                                width: 160,
+                                height: 160,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white.withValues(alpha: 0.06),
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 4),
-
-                            // Email
-                            Text(
-                              user.email,
-                              style: theme.textTheme.bodyLarge?.copyWith(
-                                color: isDark
-                                    ? AppTheme.textSecondaryDark
-                                    : AppTheme.textSecondaryLight,
+                            Positioned(
+                              top: 40,
+                              right: -40,
+                              child: Container(
+                                width: 200,
+                                height: 200,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white.withValues(alpha: 0.04),
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 16),
-
-                            // Member Since Badge
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primary
-                                    .withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.star_rounded,
-                                    size: 16,
-                                    color: theme.colorScheme.primary,
+                            // Logout button
+                            Positioned(
+                              top: 0,
+                              right: 4,
+                              child: SafeArea(
+                                child: IconButton(
+                                  icon: const Icon(
+                                    Icons.logout_outlined,
+                                    color: Colors.white,
                                   ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Member since ${_formatDate(user.createdAt)}',
-                                    style: theme.textTheme.labelMedium
-                                        ?.copyWith(
-                                      color: theme.colorScheme.primary,
-                                      fontWeight: FontWeight.w600,
+                                  onPressed: _isLoading ? null : _logout,
+                                  tooltip: 'Logout',
+                                ),
+                              ),
+                            ),
+                            // App name label
+                            const Positioned(
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              child: SafeArea(
+                                child: Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.only(top: 12),
+                                    child: Text(
+                                      'My Profile',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.5,
+                                      ),
                                     ),
                                   ),
-                                ],
+                                ),
                               ),
                             ),
-
-                            const SizedBox(
-                                height: ProfileConstants.sectionSpacing),
-
-                            // Edit Profile Button
-                            _buildPrimaryButton(
-                              icon: Icons.edit_rounded,
-                              label: 'Edit Profile',
-                              onPressed: _isLoading ? null : _editProfile,
-                              theme: theme,
-                            ),
-
-                            const SizedBox(
-                                height: ProfileConstants.sectionSpacing),
-
-                            // Privacy & Settings
-                            _buildSectionHeader(
-                                'Privacy & Settings', theme, isDark),
-                            const SizedBox(height: ProfileConstants.cardSpacing),
-                            _buildOnlineStatusCard(
-                                user.isOnline, theme, isDark),
-
-                            const SizedBox(
-                                height: ProfileConstants.sectionSpacing),
-
-                            // Account Information
-                            _buildSectionHeader(
-                                'Account Information', theme, isDark),
-                            const SizedBox(height: ProfileConstants.cardSpacing),
-
-                            _buildInfoCard(
-                              icon: Icons.person_rounded,
-                              title: 'Username',
-                              subtitle: user.username,
-                              iconColor: Colors.blue,
-                              theme: theme,
-                              isDark: isDark,
-                            ),
-                            const SizedBox(height: ProfileConstants.cardSpacing),
-
-                            _buildInfoCard(
-                              icon: Icons.email_rounded,
-                              title: 'Email',
-                              subtitle: user.email,
-                              iconColor: Colors.orange,
-                              theme: theme,
-                              isDark: isDark,
-                            ),
-                            const SizedBox(height: ProfileConstants.cardSpacing),
-
-                            _buildInfoCard(
-                              icon: Icons.calendar_today_rounded,
-                              title: 'Member Since',
-                              subtitle: _formatDate(user.createdAt),
-                              iconColor: Colors.purple,
-                              theme: theme,
-                              isDark: isDark,
-                            ),
-
-                            const SizedBox(height: 48),
-
-                            // Logout Button
-                            _buildLogoutButton(theme, isDark),
-
-                            const SizedBox(height: 40),
                           ],
+                        ),
+                      ),
+
+                      // ── Avatar — half outside the header, never clipped ──
+                      Positioned(
+                        bottom: -ProfileConstants.avatarRadius, // overlaps down
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: _buildAvatarWidget(user, theme),
                         ),
                       ),
                     ],
+                  ),
+                ),
+
+                // ── Content — top padding compensates for avatar overflow ──
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      top: ProfileConstants.avatarRadius + 16, // avatar height / 2
+                      left: ProfileConstants.spacing,
+                      right: ProfileConstants.spacing,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Username
+                        Text(
+                          user.username,
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: -0.5,
+                            color: isDark
+                                ? AppTheme.textPrimaryDark
+                                : AppTheme.textPrimaryLight,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+
+                        // Email
+                        Text(
+                          user.email,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: isDark
+                                ? AppTheme.textSecondaryDark
+                                : AppTheme.textSecondaryLight,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Member Since Badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary
+                                .withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.star_rounded,
+                                size: 16,
+                                color: theme.colorScheme.primary,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Member since ${_formatDate(user.createdAt)}',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: theme.colorScheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: ProfileConstants.sectionSpacing),
+
+                        // Edit Profile Button
+                        _buildPrimaryButton(
+                          icon: Icons.edit_rounded,
+                          label: 'Edit Profile',
+                          onPressed: _isLoading ? null : _editProfile,
+                          theme: theme,
+                        ),
+
+                        const SizedBox(height: ProfileConstants.sectionSpacing),
+
+                        // Privacy & Settings
+                        _buildSectionHeader('Privacy & Settings', theme, isDark),
+                        const SizedBox(height: ProfileConstants.cardSpacing),
+                        _buildOnlineStatusCard(user.isOnline, theme, isDark),
+
+                        const SizedBox(height: ProfileConstants.sectionSpacing),
+
+                        // Account Information
+                        _buildSectionHeader('Account Information', theme, isDark),
+                        const SizedBox(height: ProfileConstants.cardSpacing),
+
+                        _buildInfoCard(
+                          icon: Icons.person_rounded,
+                          title: 'Username',
+                          subtitle: user.username,
+                          iconColor: Colors.blue,
+                          theme: theme,
+                          isDark: isDark,
+                        ),
+                        const SizedBox(height: ProfileConstants.cardSpacing),
+
+                        _buildInfoCard(
+                          icon: Icons.email_rounded,
+                          title: 'Email',
+                          subtitle: user.email,
+                          iconColor: Colors.orange,
+                          theme: theme,
+                          isDark: isDark,
+                        ),
+                        const SizedBox(height: ProfileConstants.cardSpacing),
+
+                        _buildInfoCard(
+                          icon: Icons.calendar_today_rounded,
+                          title: 'Member Since',
+                          subtitle: _formatDate(user.createdAt),
+                          iconColor: Colors.purple,
+                          theme: theme,
+                          isDark: isDark,
+                        ),
+
+                        const SizedBox(height: 48),
+
+                        // Logout Button
+                        _buildLogoutButton(theme, isDark),
+
+                        const SizedBox(height: 40),
+                      ],
+                    ),
                   ),
                 ),
               ],

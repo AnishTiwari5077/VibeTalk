@@ -138,30 +138,45 @@ class MessageBubble extends StatelessWidget {
                     tag: 'message_${message.messageId}',
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: CachedNetworkImage(
-                        imageUrl: message.mediaUrl!,
-                        memCacheWidth: 800,
-                        memCacheHeight: 800,
-                        maxWidthDiskCache: 1200,
-                        maxHeightDiskCache: 1200,
-                        placeholder: (context, url) => Container(
-                          height: 200,
-                          color: isDark ? Colors.grey[800] : Colors.grey[300],
-                          child: const Center(
-                            child: CircularProgressIndicator(),
-                          ),
+                      // Constrain max height so very tall images don't fill
+                      // the whole screen, but keep the natural aspect ratio.
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxHeight: 320,
+                          minHeight: 80,
                         ),
-                        errorWidget: (context, url, error) => Container(
-                          height: 200,
-                          color: isDark ? Colors.grey[800] : Colors.grey[300],
-                          child: Icon(
-                            Icons.error_outline_rounded,
-                            size: 48,
-                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        child: CachedNetworkImage(
+                          imageUrl: message.mediaUrl!,
+                          // FIX: do NOT force square cache dimensions.
+                          // memCacheWidth/Height: 800 (equal values) squashed
+                          // every image into a 1:1 ratio in the memory cache,
+                          // then BoxFit.cover cropped it on screen.
+                          // Keeping only maxWidthDiskCache lets the cache scale
+                          // proportionally without changing the aspect ratio.
+                          maxWidthDiskCache: 1200,
+                          // FIX: BoxFit.contain preserves the image's natural
+                          // width:height ratio within the ConstrainedBox above.
+                          // BoxFit.cover was the direct cause of cropping.
+                          fit: BoxFit.contain,
+                          width: double.infinity,
+                          placeholder: (context, url) => Container(
+                            height: 200,
+                            color: isDark ? Colors.grey[800] : Colors.grey[300],
+                            child: const Center(
+                              child: CircularProgressIndicator(),
+                            ),
                           ),
+                          errorWidget: (context, url, error) => Container(
+                            height: 200,
+                            color: isDark ? Colors.grey[800] : Colors.grey[300],
+                            child: Icon(
+                              Icons.error_outline_rounded,
+                              size: 48,
+                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            ),
+                          ),
+                          fadeInDuration: const Duration(milliseconds: 200),
                         ),
-                        fit: BoxFit.cover,
-                        fadeInDuration: const Duration(milliseconds: 200),
                       ),
                     ),
                   ),
