@@ -43,6 +43,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   bool _isSending = false;
+  bool _isUploadingMedia = false; // true only during file/voice uploads
 
   late final ConversationController _controller;
   late final _userRepository = ref.read(userRepositoryProvider);
@@ -255,7 +256,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   Future<void> _sendVoiceMessage(String audioPath, Duration duration) async {
-    setState(() => _isSending = true);
+    setState(() {
+      _isSending = true;
+      _isUploadingMedia = true;
+    });
 
     try {
       await _controller.sendVoiceMessage(audioPath, duration);
@@ -267,12 +271,20 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isSending = false);
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+          _isUploadingMedia = false;
+        });
+      }
     }
   }
 
   Future<void> _sendMediaMessage(MessageType type, File file) async {
-    setState(() => _isSending = true);
+    setState(() {
+      _isSending = true;
+      _isUploadingMedia = true;
+    });
 
     try {
       debugPrint('Sending ${type.name} message from conversation screen');
@@ -283,7 +295,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     } catch (e) {
       debugPrint('Error in _sendMediaMessage: $e');
       if (mounted) {
-        // Error already handled in controller, but show user-friendly message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -296,7 +307,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isSending = false);
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+          _isUploadingMedia = false;
+        });
+      }
     }
   }
 
@@ -753,6 +769,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               senderName: _replyToSenderName!,
               onCancel: _cancelReply,
             ),
+          // Slim upload progress bar — only shown during media/voice uploads.
+          // Text messages are near-instant so no indicator is needed for them.
+          if (_isUploadingMedia)
+            LinearProgressIndicator(
+              minHeight: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                theme.colorScheme.primary,
+              ),
+              backgroundColor:
+                  theme.colorScheme.primary.withValues(alpha: 0.15),
+            ),
           _buildMessageInput(theme, isDark),
         ],
       ),
@@ -1035,21 +1062,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               ),
             ),
             const SizedBox(width: 4),
-            if (_isSending)
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      theme.colorScheme.primary,
-                    ),
-                  ),
-                ),
-              )
-            else if (_messageController.text.isEmpty)
+            // Mic button (empty text) or send button (has text).
+            // Never replaced by a spinner — the LinearProgressIndicator above
+            // the input bar signals an ongoing upload without blocking input.
+            if (_messageController.text.isEmpty)
               VoiceRecorderButton(onRecordingComplete: _sendVoiceMessage)
             else
               Container(
