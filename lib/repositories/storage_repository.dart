@@ -25,6 +25,15 @@ class StorageRepository {
       final fileSize = await file.length();
       debugPrint('   File size: ${fileSize / 1024} KB');
 
+      // Cloudinary limit: 150 MB (requires paid plan; free plan = 10 MB images)
+      const maxImageBytes = 150 * 1024 * 1024; // 150 MB
+      if (fileSize > maxImageBytes) {
+        throw Exception(
+          'Avatar image is too large (${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB). '
+          'Maximum allowed size is 150 MB.',
+        );
+      }
+
       // ✅ Use timestamp to create unique filename
       final timestamp = DateTime.now().millisecondsSinceEpoch;
 
@@ -39,7 +48,7 @@ class StorageRepository {
 
       debugPrint('✅ Avatar uploaded successfully');
       debugPrint('   Public ID: ${response.publicId}');
-      debugPrint('   Secure URL: ${response.secureUrl.substring(0, 50)}...');
+      debugPrint('   Secure URL: ${response.secureUrl.substring(0, response.secureUrl.length.clamp(0, 50))}...');
 
       return response.secureUrl;
     } on CloudinaryException catch (e) {
@@ -51,16 +60,29 @@ class StorageRepository {
     }
   }
 
+  /// Upload avatar — alias kept for backward compat (progress not supported
+  /// by cloudinary_public; use uploadAvatar instead).
   Future<String> uploadAvatarWithProgress(
     String uid,
-    File file,
-    Function(int sent, int total)? onProgress,
-  ) async {
+    File file, [
+    // ignore: avoid_unused_parameters
+    void Function(int sent, int total)? onProgress,
+  ]) async {
     try {
       debugPrint('📤 Starting avatar upload with progress for user: $uid');
 
       if (!await file.exists()) {
         throw Exception('Image file does not exist');
+      }
+
+      // Same 150 MB guard as uploadAvatar
+      final fileSize = await file.length();
+      const maxImageBytes = 150 * 1024 * 1024;
+      if (fileSize > maxImageBytes) {
+        throw Exception(
+          'Avatar image is too large (${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB). '
+          'Maximum allowed size is 150 MB.',
+        );
       }
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -98,6 +120,17 @@ class StorageRepository {
 
       final fileSize = await file.length();
       debugPrint('   File size: ${fileSize / (1024 * 1024)} MB');
+
+      // Max upload limit: 150 MB for all types (requires paid Cloudinary plan)
+      // Free plan limits: 10 MB images, 100 MB video/raw
+      const maxBytes = 150 * 1024 * 1024; // 150 MB
+      const maxLabel = '150 MB';
+      if (fileSize > maxBytes) {
+        throw Exception(
+          'File is too large (${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB). '
+          'Maximum allowed size for $fileType is $maxLabel.',
+        );
+      }
 
       final messageId = _uuid.v4();
       final fileName = path.basenameWithoutExtension(file.path);
