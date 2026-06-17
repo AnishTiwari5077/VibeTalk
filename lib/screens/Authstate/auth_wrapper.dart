@@ -178,6 +178,16 @@ class _AuthenticationWrapperState extends ConsumerState<AuthenticationWrapper> {
 
               // ── Zego not yet initialized ──────────────────────────────────
               if (!ZegoService.isInitialized) {
+                // FIX: Firestore can emit an intermediate snapshot where
+                // username is '' before the real document arrives (cache race).
+                // Zego silently skips _pageManager setup when userName is empty,
+                // so _isInitialized would become true with a broken state →
+                // "Failed to start call" on every first launch.
+                // Wait here until username is populated.
+                if (currentUser.username.isEmpty || currentUser.email.isEmpty) {
+                  return const SplashScreen(message: 'Loading profile...');
+                }
+
                 // Kick off async init (guarded against duplicate calls).
                 if (!_zegoInitializing) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {

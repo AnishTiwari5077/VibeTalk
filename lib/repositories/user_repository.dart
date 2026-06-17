@@ -15,7 +15,24 @@ class UserRepository {
           // and Zego silently rejected the call with "user parameters is not valid".
           final data = Map<String, dynamic>.from(doc.data()!);
           data['uid'] = doc.id;
-          return UserModel.fromMap(data);
+          final userModel = UserModel.fromMap(data);
+
+          // FIX: Guard against partial Firestore snapshots.
+          // On every fresh install (uninstall + reinstall), signInWithEmailAndPassword
+          // calls set({isOnline, fcmToken, lastSeen}, merge: true) AFTER Firebase Auth
+          // fires authStateChanges. The Firestore listener is already active at that
+          // point, so the merge write triggers a LOCAL optimistic snapshot containing
+          // only those 3 fields — username and email are null because local cache was
+          // wiped on uninstall. This caused:
+          //   1. Zego init with empty userName → _pageManager null → call crash
+          //   2. Profile screen flicker with blank Username/Email cards
+          // Returning null here makes currentUserProvider yield null, which keeps
+          // auth_wrapper on SplashScreen until the full server document arrives.
+          if (userModel.username.isEmpty || userModel.email.isEmpty) {
+            return null;
+          }
+
+          return userModel;
         } catch (e) {
           return null;
         }

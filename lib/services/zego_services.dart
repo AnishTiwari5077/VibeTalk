@@ -35,10 +35,16 @@ class ZegoService {
     }
 
     if (userName.isEmpty) {
-      // This should not happen — every account sets a username at registration.
-      // Log a warning but do NOT fall back to userId (that shows a random UID
-      // as the display name in the call UI).
-      debugPrint('\u26a0️ [ZegoService] userName is empty — check that Firestore user document has a username field');
+      // FIX: Treat empty userName as a hard error instead of a soft warning.
+      // When userName is empty, Zego's init() silently skips setting up
+      // _pageManager internally. _isInitialized would then become true with
+      // a broken state, causing every subsequent call attempt to throw:
+      //   AssertionError: '_pageManager != null'
+      // Throwing here ensures _isInitialized stays false so auth_wrapper
+      // will retry init once Firestore delivers the real username.
+      throw Exception(
+        '[ZegoService] userName is empty — Firestore user document may not be fully loaded yet. Init aborted.',
+      );
     }
 
     debugPrint('🔧 [ZegoService] Initializing with userId=$userId userName=$userName');

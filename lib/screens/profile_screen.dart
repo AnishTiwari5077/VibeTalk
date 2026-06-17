@@ -114,6 +114,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           data: (user) {
             if (user == null) return _buildEmptyState(theme, isDark);
 
+            // FIX: Firestore emits an intermediate snapshot on first launch
+            // where username and email are '' (cache race, same root cause
+            // as the Zego call bug). Treat this as still-loading so the
+            // profile cards never flicker with blank values.
+            if (user.username.isEmpty || user.email.isEmpty) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
             return CustomScrollView(
               physics: const BouncingScrollPhysics(
                 parent: AlwaysScrollableScrollPhysics(),
