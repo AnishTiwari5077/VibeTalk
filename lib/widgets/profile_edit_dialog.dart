@@ -7,6 +7,7 @@ import 'package:vibetalk/core/error_handler.dart';
 import 'package:vibetalk/core/validator.dart';
 import 'package:vibetalk/models/user_model.dart';
 import 'package:vibetalk/providers/auth_provider.dart';
+import 'package:vibetalk/providers/user_cache_provider.dart';
 import 'package:vibetalk/services/image_service.dart';
 import 'package:vibetalk/theme/app_theme.dart';
 import 'package:vibetalk/widgets/loading_overlay.dart';
@@ -97,6 +98,10 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
           _newAvatar!,
         );
         await userRepo.updateAvatar(widget.user.uid, avatarUrl);
+        // Invalidate the cache so every chat-list tile that shows this user's
+        // avatar fetches the fresh URL immediately — no waiting for the
+        // 5-minute TTL to expire.
+        ref.invalidate(userCacheProvider(widget.user.uid));
       }
 
       if (mounted) {
