@@ -10,10 +10,6 @@ class EnvConfig {
     'CLOUDINARY_UPLOAD_PRESET',
   );
 
-  // ZEGO
-  static const zegoAppId = int.fromEnvironment('ZEGO_APP_ID');
-  static const zegoAppSign = String.fromEnvironment('ZEGO_APP_SIGN');
-
   // Notifications
   static const notificationBackendUrl = String.fromEnvironment(
     'NOTIFICATION_BACKEND_URL',
@@ -43,7 +39,7 @@ class EnvConfig {
 
   static bool get isConfigured {
     return cloudinaryCloudName.isNotEmpty &&
-        zegoAppId != 0 &&
         firebaseProjectId.isNotEmpty;
   }
 }
+

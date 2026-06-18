@@ -14,8 +14,9 @@ import 'package:vibetalk/services/image_service.dart';
 import 'package:vibetalk/services/message_service.dart';
 
 import 'package:vibetalk/services/notification_services.dart';
-import 'package:vibetalk/services/zego_services.dart';
-import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
+import 'package:vibetalk/services/webrtc_service.dart';
+import 'package:vibetalk/screens/Calling/calling_screen.dart';
+import 'package:vibetalk/models/call_model.dart';
 import '../../models/user_model.dart';
 import '../../models/message_model.dart';
 import '../../providers/auth_provider.dart';
@@ -564,98 +565,83 @@ class ConversationController {
     }
   }
 
-  // ─── shared helper ───────────────────────────────────────────────────────
-  /// Waits up to [timeoutSeconds] for Zego to finish initialising.
-  /// Returns true when ready, false if it timed out.
-  Future<bool> _waitForZego({int timeoutSeconds = 6}) async {
-    debugPrint(
-      '⏳ [ZEGO] isInitialized=${ZegoService.isInitialized} — waiting up to ${timeoutSeconds}s…',
-    );
-    final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
-    while (!ZegoService.isInitialized) {
-      if (DateTime.now().isAfter(deadline)) {
-        debugPrint('❌ [ZEGO] Timed out waiting for init.');
-        return false;
-      }
-      await Future.delayed(const Duration(milliseconds: 300));
-    }
-    debugPrint('✅ [ZEGO] Ready.');
-    return true;
-  }
-
   // ─── Call helpers ──────────────────────────────────────────────────────────
 
-  /// Public entry points — kept separate so the UI can call them by name.
   Future<void> makeAudioCall() => _makeCall(isVideo: false);
   Future<void> makeVideoCall() => _makeCall(isVideo: true);
 
-  /// Shared implementation for both audio and video calls.
-  /// Extracted to remove ~60 lines of duplicated guard + send logic.
   Future<void> _makeCall({required bool isVideo}) async {
     final callLabel = isVideo ? '🎥 VIDEO' : '📞 AUDIO';
     debugPrint('$callLabel [CALL] makeCall(isVideo=$isVideo) tapped');
 
     final currentUser = ref.read(currentUserProvider).value;
-    debugPrint('👤 [CALL] currentUser=${currentUser?.uid}');
     if (currentUser == null) {
       debugPrint('❌ [CALL] currentUser is null — aborting');
       return;
     }
 
-    debugPrint('🔍 [CALL] ZegoService.isInitialized=${ZegoService.isInitialized}');
-
-    if (!ZegoService.isInitialized) {
-      try {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Connecting call service…'),
-              duration: Duration(seconds: 6),
-            ),
-          );
-        }
-      } catch (_) {}
-
-      final ready = await _waitForZego();
-
-      try {
-        if (context.mounted) ScaffoldMessenger.of(context).clearSnackBars();
-      } catch (_) {}
-
-      if (!ready) {
-        try {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Call service failed to start. Please restart the app.'),
-              ),
-            );
-          }
-        } catch (_) {}
-        return;
-      }
-    }
-
-    final callID = '${chatId}_${DateTime.now().millisecondsSinceEpoch}';
-    debugPrint('$callLabel [CALL] Sending → callID=$callID friend=${friend.uid}');
-
     try {
-      await ZegoUIKitPrebuiltCallInvitationService().send(
-        invitees: [ZegoCallUser(friend.uid, friend.username)],
-        isVideoCall: isVideo,
-        resourceID: 'zego_call',
-        callID: callID,
-        notificationTitle: currentUser.username,
-        notificationMessage: isVideo
-            ? '${currentUser.username} is video calling you…'
-            : '${currentUser.username} is calling you…',
+      // 1. Resolve callee FCM token — prefer cached model, fallback to Firestore
+      String? calleeToken =
+          friend.fcmToken.isNotEmpty ? friend.fcmToken : null;
+
+      if (calleeToken == null) {
+        debugPrint('⚠️ [CALL] FCM token not in model — fetching from Firestore');
+        final doc =
+            await _firestore.collection('users').doc(friend.uid).get();
+        calleeToken = doc.data()?['fcmToken'] as String?;
+      }
+
+      if (calleeToken == null || calleeToken.isEmpty) {
+        debugPrint(
+            '⚠️ [CALL] Callee has no FCM token — callee must have app open to receive');
+      }
+
+      // 2. Create Firestore call document
+      final callId = await WebRtcService.createCallDocument(
+        callerId: currentUser.uid,
+        callerName: currentUser.username,
+        callerAvatarUrl: currentUser.avatarUrl,
+        calleeId: friend.uid,
+        calleeName: friend.username,
+        isVideo: isVideo,
       );
-      debugPrint('✅ [CALL] ${isVideo ? 'Video' : 'Audio'} call sent to: ${friend.username} (${friend.uid})');
-    } catch (e, st) {
-      debugPrint('❌ [CALL] Call error: $e\n$st');
-      // Guard: ScaffoldMessenger.of(context) can throw even when
-      // context.mounted is true if the scaffold deactivated when
-      // the call screen launched. Swallow that secondary throw.
+
+      debugPrint('$callLabel [CALL] callId=$callId');
+
+      // 3. Send FCM push to callee via backend (wakes killed/background app)
+      if (calleeToken != null && calleeToken.isNotEmpty) {
+        final sent = await NotificationService.sendCallNotification(
+          receiverToken: calleeToken,
+          callerName: currentUser.username,
+          callId: callId,
+          isVideo: isVideo,
+        );
+        debugPrint(
+            '$callLabel [CALL] FCM notification ${sent ? "sent ✅" : "failed ❌"}');
+      }
+
+      // 4. Navigate caller to CallingScreen
+      if (context.mounted) {
+        final call = CallModel(
+          callId: callId,
+          callerId: currentUser.uid,
+          callerName: currentUser.username,
+          callerAvatarUrl: currentUser.avatarUrl,
+          calleeId: friend.uid,
+          calleeName: friend.username,
+          isVideo: isVideo,
+          status: 'ringing',
+          createdAt: DateTime.now(),
+        );
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => CallingScreen(call: call, isCaller: true),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ [CALL] Call error: $e');
       try {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

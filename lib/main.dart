@@ -3,11 +3,12 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:vibetalk/models/call_model.dart';
 import 'package:vibetalk/screens/Authstate/auth_wrapper.dart';
+import 'package:vibetalk/screens/Calling/incoming_call_screen.dart';
 import 'package:vibetalk/screens/Conservation/conversation_screen.dart';
 import 'package:vibetalk/models/user_model.dart';
-import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
-import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 import 'services/notification_services.dart';
 import 'theme/app_theme.dart';
 
@@ -16,40 +17,23 @@ import 'theme/app_theme.dart';
 // ─────────────────────────────────────────────────────────
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // FIX: Ignore Zego offline push messages BEFORE any heavy init.
-  // Zego's own internal handler already processes these.
-  // Touching them here causes the 10-20 second call delivery delay.
-  if (message.data.containsKey('zego') ||
-      message.data['resourceID'] == 'zego_call' ||
-      message.data.containsKey('callID')) {
-    debugPrint('📬 Zego offline push — handled by ZegoUIKit, ignoring here.');
-    return;
-  }
-
-  // Only initialise Firebase when handling a real app notification
   await Firebase.initializeApp();
   debugPrint('📬 Background message: ${message.messageId}');
-
   await NotificationService.initializeForBackground();
   await NotificationService.showLocalNotification(message);
 }
 
 // ─────────────────────────────────────────────────────────
-// Permission helper
-// FIX: ALL six permissions are requested here, in ONE place,
-// BEFORE Firebase Messaging and BEFORE Zego init.
-// Previously notification + systemAlertWindow were only
-// requested inside ZegoService.initializeZego() (post-login),
-// which meant FCM couldn't deliver call notifications on
-// first launch and the system overlay wasn't ready.
+// Permission helper — requests camera, mic, bluetooth,
+// notifications, and system-alert-window in one shot.
 // ─────────────────────────────────────────────────────────
 Future<void> _requestAllPermissions() async {
   final statuses = await [
-    Permission.microphone, // required for voice/video calls
-    Permission.camera, // required for video calls
-    Permission.bluetoothConnect, // required on Android 12+
-    Permission.notification, // FIX: was missing — FCM needs this
-    Permission.systemAlertWindow, // FIX: was missing — call overlay needs this
+    Permission.microphone,
+    Permission.camera,
+    Permission.bluetoothConnect,
+    Permission.notification,
+    Permission.systemAlertWindow,
   ].request();
 
   statuses.forEach((permission, status) {
@@ -58,11 +42,8 @@ Future<void> _requestAllPermissions() async {
 }
 
 // ─────────────────────────────────────────────────────────
-// FCM token warm-up
-// FIX: On first launch the FCM token is generated async.
-// Awaiting it here guarantees ZPNs.registerPush() (called
-// inside ZegoService.initializeZego()) finds a cached token
-// instead of failing silently with errorCode != 0.
+// FCM token warm-up — ensures the token is cached before
+// NotificationService needs it.
 // ─────────────────────────────────────────────────────────
 Future<void> _ensureFcmTokenReady() async {
   try {
@@ -71,51 +52,36 @@ Future<void> _ensureFcmTokenReady() async {
     );
     debugPrint('✅ FCM token ready: $token');
   } catch (e) {
-    // Non-fatal — Zego will retry registration on next launch
     debugPrint('⚠️ FCM token not ready within 10s: $e');
   }
 }
 
 // ─────────────────────────────────────────────────────────
 // main()
-// FIX: Correct startup sequence:
+// Startup sequence:
 //   1. Firebase init
-//   2. Register background handler IMMEDIATELY (before any async gap)
-//   3. Request ALL permissions and wait for user responses
+//   2. Register background FCM handler
+//   3. Request all permissions
 //   4. Warm up FCM token
 //   5. NotificationService init
-//   6. Zego background call engine (useSystemCallingUI)
-//   7. runApp
+//   6. runApp
 // ─────────────────────────────────────────────────────────
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp();
 
-  // FIX: Register background handler immediately after Firebase init,
-  // before any blocking calls. Previously this came after
-  // _requestCallPermissions() which meant a message arriving during
-  // the permission-dialog window had no handler registered.
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // FIX: Request every permission in one shot, wait for completion
   await _requestAllPermissions();
-
-  // FIX: Warm up the FCM token so ZPNs.registerPush() succeeds on first launch
   await _ensureFcmTokenReady();
-
   await NotificationService.initialize();
-
-  // Enable background/system call UI (must come before runApp)
-  ZegoUIKitPrebuiltCallInvitationService().useSystemCallingUI([
-    ZegoUIKitSignalingPlugin(),
-  ]);
 
   runApp(const ProviderScope(child: MyApp()));
 }
 
 // ─────────────────────────────────────────────────────────
-// App widget — unchanged except minor cleanup
+// App widget
 // ─────────────────────────────────────────────────────────
 class MyApp extends ConsumerStatefulWidget {
   const MyApp({super.key});
@@ -132,16 +98,9 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // FIX: Set navigator key SYNCHRONOUSLY here, before any frame is painted.
-    // Previously this was inside addPostFrameCallback, which fires AFTER the
-    // first frame — meaning AuthenticationWrapper had already started Zego init
-    // before the key was registered. Zego uses the key internally to push call
-    // screens; if it arrives late the first outgoing call silently goes nowhere.
-    ZegoUIKitPrebuiltCallInvitationService().setNavigatorKey(navigatorKey);
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Wire up notification tap navigation (still needs a frame)
       NotificationService.onNotificationTap = _handleNotificationTap;
+      NotificationService.onCallNotificationTap = _handleCallNotificationTap;
       NotificationService.getInitialMessage();
     });
   }
@@ -156,32 +115,15 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     debugPrint('📱 App lifecycle: $state');
-
-    switch (state) {
-      case AppLifecycleState.resumed:
-        debugPrint('✅ Resumed — calls active');
-        break;
-      case AppLifecycleState.paused:
-        debugPrint('⏸️ Paused — background calls still work');
-        break;
-      case AppLifecycleState.inactive:
-        debugPrint('💤 Inactive');
-        break;
-      case AppLifecycleState.detached:
-        debugPrint('🔌 Detached');
-        break;
-      case AppLifecycleState.hidden:
-        debugPrint('👻 Hidden');
-        break;
-    }
   }
 
+  // ── Chat notification tap ──────────────────────────────────────────────────
   void _handleNotificationTap(
     String chatId,
     String friendId,
     String friendUsername,
   ) {
-    debugPrint('🔔 Notification tapped — ChatId: $chatId');
+    debugPrint('🔔 Chat notification tapped — ChatId: $chatId');
 
     final context = navigatorKey.currentContext;
     if (context == null) return;
@@ -202,6 +144,44 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     );
   }
 
+  // ── Call notification tap (app killed/background) ─────────────────────────
+  void _handleCallNotificationTap(String callId) async {
+    debugPrint('📞 Call notification tapped — callId: $callId');
+
+    final context = navigatorKey.currentContext;
+    if (context == null) return;
+
+    try {
+      // Fetch the call document from Firestore
+      final snap = await FirebaseFirestore.instance
+          .collection('calls')
+          .doc(callId)
+          .get();
+
+      if (!snap.exists || snap.data() == null) {
+        debugPrint('⚠️ Call $callId no longer exists');
+        return;
+      }
+
+      final call = CallModel.fromMap(snap.data()!);
+
+      // Only navigate if the call is still ringing
+      if (call.status != 'ringing') {
+        debugPrint('⚠️ Call $callId is no longer ringing (${call.status})');
+        return;
+      }
+
+      if (!context.mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => IncomingCallScreen(call: call),
+        ),
+      );
+    } catch (e) {
+      debugPrint('❌ Failed to load call $callId: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -211,21 +191,6 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,
       navigatorKey: navigatorKey,
-      builder: (context, child) {
-        return Stack(
-          children: [
-            child!,
-            // Handles incoming call UI when app is in foreground or background
-            ZegoUIKitPrebuiltCallMiniOverlayPage(
-              // Use ?. so that if the navigator has not yet mounted its first
-              // frame (e.g., during hot-restart or app init), we fall back to
-              // the MaterialApp build-context instead of throwing a NPE.
-              contextQuery: () =>
-                  navigatorKey.currentState?.context ?? context,
-            ),
-          ],
-        );
-      },
       home: const AuthenticationWrapper(),
     );
   }

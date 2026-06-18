@@ -44,6 +44,11 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>VibeTalk needs camera access for video calls</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>VibeTalk needs microphone access for voice and video calls</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>VibeTalk needs photo library access to share images</string>
 </dict>
 </plist>

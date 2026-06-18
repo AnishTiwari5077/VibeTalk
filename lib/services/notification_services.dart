@@ -18,7 +18,7 @@ import '../core/env_config.dart';
 //   POST /send-friend-request   – new friend requests
 //   POST /send-request-accepted – accepted friend requests
 //   POST /send-unfriend         – unfriend events
-//   POST /send-call             – voice/video call (data-only, ZEGOCLOUD)
+//   POST /send-call             – voice/video call (data-only, WebRTC wake)
 //   POST /send-notification     – generic fallback
 // =============================================================================
 class NotificationService {
@@ -31,6 +31,18 @@ class NotificationService {
     'Chat Notifications',
     description: 'Notifications for chat messages',
     importance: Importance.high,
+    playSound: true,
+    enableVibration: true,
+  );
+
+  // Dedicated high-priority channel for incoming calls.
+  // fullScreenIntent requires this channel to have Importance.max.
+  static const AndroidNotificationChannel _callChannel =
+      AndroidNotificationChannel(
+    'call_channel',
+    'Incoming Calls',
+    description: 'Ringing notifications for incoming voice and video calls',
+    importance: Importance.max,
     playSound: true,
     enableVibration: true,
   );
@@ -64,9 +76,13 @@ class NotificationService {
   // Navigation callback
   // ---------------------------------------------------------------------------
 
-  /// Set this in main.dart to navigate when a notification is tapped.
+  /// Set this in main.dart to navigate when a chat notification is tapped.
   static Function(String chatId, String friendId, String friendUsername)?
       onNotificationTap;
+
+  /// Set this in main.dart to open IncomingCallScreen when a call notification
+  /// is tapped while the app is in background or killed state.
+  static Function(String callId)? onCallNotificationTap;
 
   // ---------------------------------------------------------------------------
   // Initialization
@@ -93,6 +109,13 @@ class NotificationService {
           .resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>()
           ?.createNotificationChannel(_channel);
+
+      // Also create the call channel so Android registers it before
+      // the first call arrives.
+      await _localNotifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(_callChannel);
 
       const androidSettings =
           AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -138,6 +161,11 @@ class NotificationService {
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_channel);
 
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(_callChannel);
+
     const initSettings = InitializationSettings(
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
     );
@@ -151,6 +179,8 @@ class NotificationService {
   static Future<void> _handleForegroundMessage(RemoteMessage message) async {
     debugPrint('📩 Foreground message received: ${message.data}');
 
+    final type = message.data['type'] as String?;
+
     // Suppress if user is already in the chat that sent this message
     final chatId = message.data['chatId'] as String?;
     if (chatId != null && chatId == _activeChatId) {
@@ -158,12 +188,11 @@ class NotificationService {
       return;
     }
 
-    // Suppress call-type notifications — ZEGOCLOUD handles those in-app
-    final type = message.data['type'] as String?;
+    // For call-type notifications: show them so the callee can open
+    // IncomingCallScreen. The incomingCallProvider handles foreground
+    // via Firestore streaming; FCM is mainly for background/killed states.
     if (type == 'call') {
-      debugPrint(
-          '🔕 Suppressing call notification in foreground — ZEGOCLOUD handles it');
-      return;
+      debugPrint('📞 Call notification — showing for background wake');
     }
 
     await showLocalNotification(message);
@@ -172,6 +201,7 @@ class NotificationService {
   static Future<void> showLocalNotification(RemoteMessage message) async {
     final notification = message.notification;
     final data = message.data;
+    final type = data['type'] as String?;
 
     // Prefer notification object; fall back to data payload fields
     final title = notification?.title ??
@@ -182,28 +212,49 @@ class NotificationService {
         notification?.body ?? data['body'] ?? data['message'] ?? '';
 
     if (!kIsWeb) {
-      final androidDetails = AndroidNotificationDetails(
-        _channel.id,
-        _channel.name,
-        channelDescription: _channel.description,
-        importance: Importance.high,
-        priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
-        playSound: true,
-        enableVibration: true,
-        styleInformation: BigTextStyleInformation(body, contentTitle: title),
-      );
+      NotificationDetails details;
 
-      const iosDetails = DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-      );
-
-      final details = NotificationDetails(
-        android: androidDetails,
-        iOS: iosDetails,
-      );
+      if (type == 'call') {
+        // Full-screen intent makes this behave like a system call screen
+        // on Android 10+ (requires USE_FULL_SCREEN_INTENT permission).
+        final androidDetails = AndroidNotificationDetails(
+          _callChannel.id,
+          _callChannel.name,
+          channelDescription: _callChannel.description,
+          importance: Importance.max,
+          priority: Priority.max,
+          icon: '@mipmap/ic_launcher',
+          playSound: true,
+          enableVibration: true,
+          fullScreenIntent: true,
+          category: AndroidNotificationCategory.call,
+          styleInformation: BigTextStyleInformation(body, contentTitle: title),
+        );
+        const iosDetails = DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        );
+        details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+      } else {
+        final androidDetails = AndroidNotificationDetails(
+          _channel.id,
+          _channel.name,
+          channelDescription: _channel.description,
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+          playSound: true,
+          enableVibration: true,
+          styleInformation: BigTextStyleInformation(body, contentTitle: title),
+        );
+        const iosDetails = DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        );
+        details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+      }
 
       await _localNotifications.show(
         id: message.hashCode,
@@ -236,6 +287,15 @@ class NotificationService {
     final type = data['type'] as String?;
 
     switch (type) {
+      case 'call':
+        // App was killed/background — user tapped the call notification.
+        // Open IncomingCallScreen for the given callId.
+        final callId = data['callId'] as String?;
+        if (callId != null && callId.isNotEmpty) {
+          debugPrint('📞 Call notification tapped — callId: $callId');
+          onCallNotificationTap?.call(callId);
+        }
+        break;
       case 'message':
         final chatId = data['chatId'] as String?;
         final senderId = data['senderId'] as String?;
@@ -325,6 +385,26 @@ class NotificationService {
       'acceptorName': acceptorName,
       'acceptorId'  : acceptorId,
       'chatId'      : chatId,
+    });
+  }
+
+  /// POST /send-call
+  /// Sends a call push notification to wake the callee's device.
+  static Future<bool> sendCallNotification({
+    required String receiverToken,
+    required String callerName,
+    required String callId,
+    required bool isVideo,
+  }) async {
+    return _post('/send-call', {
+      'token'     : receiverToken,
+      'callerName': callerName,
+      'callId'    : callId,
+      'isVideo'   : isVideo,
+      'title'     : callerName,
+      'body'      : isVideo
+          ? '$callerName is video calling you…'
+          : '$callerName is calling you…',
     });
   }
 

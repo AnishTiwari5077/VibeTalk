@@ -10,7 +10,7 @@ enum CallState {
   timeout,
 }
 
-// A globally accessible controller that ZegoService can use to update state
+// A globally accessible controller that WebRtcService can use to update state.
 class CallStateController extends ValueNotifier<CallState> {
   CallStateController() : super(CallState.idle);
 
@@ -21,5 +21,5 @@ class CallStateController extends ValueNotifier<CallState> {
   }
 }
 
-// Global instance to be called directly from static methods (like ZegoService)
+// Global instance — called directly from WebRtcService and call screens.
 final globalCallStateController = CallStateController();

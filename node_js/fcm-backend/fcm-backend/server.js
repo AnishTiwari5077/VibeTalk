@@ -8,8 +8,8 @@
 //   POST /send-request-accepted   – friend request accepted notification
 //   POST /send-notification       – generic fallback (kept for backward compatibility)
 //
-//   NOTE: Call notifications are handled entirely by ZEGOCLOUD ZPNs (zego_services.dart).
-//         Do NOT send call FCM from this server — it would cause duplicate notifications.
+//   NOTE: Call notifications use /send-call which sends both notification
+//         + data payload so the device wakes even in killed/terminated state.
 
 const express    = require('express');
 const admin      = require('firebase-admin');
@@ -109,10 +109,66 @@ app.get('/', (req, res) => {
       'POST /send-message',
       'POST /send-friend-request',
       'POST /send-request-accepted',
+      'POST /send-call',
       'POST /send-notification  (generic)',
     ],
-    note: 'Call notifications are handled by ZEGOCLOUD ZPNs — no /send-call endpoint needed.',
   });
+});
+
+// =======================
+// INCOMING CALL NOTIFICATION
+// =======================
+// Body: { token, callerName, callId, isVideo }
+//
+// Sends a high-priority FCM message with BOTH a notification payload
+// (so the OS shows a system-tray notification when the app is killed)
+// AND a data payload (so the Flutter app can open IncomingCallScreen).
+app.post('/send-call', async (req, res) => {
+  try {
+    const { token, callerName, callId, isVideo } = req.body;
+    console.log('📞 /send-call:', { callerName, callId, isVideo });
+
+    const required = missing(req.body, ['token', 'callerName', 'callId']);
+    if (required.length) {
+      return res.status(400).json({ success: false, error: `Missing fields: ${required.join(', ')}` });
+    }
+
+    const isVideoCall = String(isVideo) === 'true';
+    const callLabel   = isVideoCall ? 'Incoming Video Call' : 'Incoming Voice Call';
+
+    const message = {
+      token,
+      // DATA-ONLY — no 'notification' key.
+      // This ensures _firebaseMessagingBackgroundHandler fires on EVERY Android
+      // state (killed / background). The handler then shows a custom local
+      // notification with fullScreenIntent so it behaves like a call screen.
+      data: {
+        type      : 'call',
+        callId    : String(callId),
+        callerName: String(callerName),
+        isVideo   : String(isVideoCall),
+        title     : String(callerName),
+        body      : callLabel,
+      },
+      android: {
+        priority: 'high',          // wakes Doze-mode devices
+      },
+      apns: {
+        headers: { 'apns-priority': '10' },
+        payload: {
+          aps: {
+            'content-available': 1,  // wakes iOS background
+          },
+        },
+      },
+    };
+
+    const response = await admin.messaging().send(message);
+    console.log('✅ Call FCM sent:', response);
+    return res.json({ success: true, messageId: response });
+  } catch (e) {
+    return fail(res, e);
+  }
 });
 
 // =======================
