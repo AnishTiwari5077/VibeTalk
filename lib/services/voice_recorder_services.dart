@@ -38,8 +38,24 @@ class VoiceRecorderService {
       await _audioRecorder.start(
         const RecordConfig(
           encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          sampleRate: 44100,
+          // 64 kbps is more than enough for mono voice; 128 kbps is overkill.
+          bitRate: 64000,
+          // 16 kHz wideband — optimal for voice. Same quality as WhatsApp/
+          // Telegram voice messages; much smaller files than 44100 Hz.
+          sampleRate: 16000,
+          // Mono: voice needs one channel, not stereo. Halves the file size.
+          numChannels: 1,
+          // Android hardware audio processing (applied in the microphone
+          // hardware/DSP before the data reaches Flutter):
+          autoGain: true,       // normalises quiet/loud voices
+          echoCancel: true,     // removes speaker echo
+          noiseSuppress: true,  // removes background noise
+          androidConfig: AndroidRecordConfig(
+            // VOICE_COMMUNICATION source activates hardware noise suppressor,
+            // echo canceller, and AGC tuned for speech — the same pipeline
+            // used by Android's phone calls and voice notes in most apps.
+            audioSource: AndroidAudioSource.voiceCommunication,
+          ),
         ),
         path: _recordingPath!,
       );
