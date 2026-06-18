@@ -17,6 +17,7 @@ import 'package:vibetalk/screens/Calling/incoming_call_screen.dart';
 import 'package:vibetalk/screens/home_screen.dart';
 import 'package:vibetalk/screens/sign_screen.dart';
 import 'package:vibetalk/screens/splash_screen.dart';
+import 'package:vibetalk/services/notification_services.dart';
 
 class AuthenticationWrapper extends ConsumerStatefulWidget {
   const AuthenticationWrapper({super.key});
@@ -26,8 +27,7 @@ class AuthenticationWrapper extends ConsumerStatefulWidget {
       _AuthenticationWrapperState();
 }
 
-class _AuthenticationWrapperState
-    extends ConsumerState<AuthenticationWrapper> {
+class _AuthenticationWrapperState extends ConsumerState<AuthenticationWrapper> {
   String? _previousUserId;
   DateTime? _userLoadStartTime;
 
@@ -46,28 +46,33 @@ class _AuthenticationWrapperState
   /// Watches the incomingCallProvider and opens IncomingCallScreen
   /// whenever a new ringing call arrives for the current user.
   void _listenForIncomingCalls() {
-    ref.listenManual<AsyncValue<CallModel?>>(
-      incomingCallProvider,
-      (_, next) {
-        final call = next.asData?.value;
-        if (call == null) return;
-        if (call.callId == _shownCallId) return; // already showing
+    ref.listenManual<AsyncValue<CallModel?>>(incomingCallProvider, (_, next) {
+      final call = next.asData?.value;
+      if (call == null) return;
+      if (call.callId == _shownCallId) return; // already showing
 
+      // main.dart navigated directly to CallingScreen via notification Accept.
+      // Don't push IncomingCallScreen on top — mark as shown and skip.
+      if (NotificationService.isIncomingCallSuppressed(call.callId)) {
         _shownCallId = call.callId;
+        NotificationService.clearSuppressedCall();
+        return;
+      }
 
-        final ctx = context;
-        if (!ctx.mounted) return;
+      _shownCallId = call.callId;
 
-        Navigator.of(ctx).push(
-          MaterialPageRoute(
-            builder: (_) => IncomingCallScreen(call: call),
-          ),
-        ).then((_) {
-          // Reset so a new call can be shown after this one ends
-          _shownCallId = null;
-        });
-      },
-    );
+      final ctx = context;
+      if (!ctx.mounted) return;
+
+      Navigator.of(ctx)
+          .push(
+            MaterialPageRoute(builder: (_) => IncomingCallScreen(call: call)),
+          )
+          .then((_) {
+            // Reset so a new call can be shown after this one ends
+            _shownCallId = null;
+          });
+    });
   }
 
   @override

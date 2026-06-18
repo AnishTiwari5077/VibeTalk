@@ -1,11 +1,52 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show Color;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import '../core/env_config.dart';
+
+// =============================================================================
+// Background notification action handler (top-level, @pragma required).
+//
+// Called by flutter_local_notifications when the user taps an action button
+// (Accept / Decline) on a local notification WHILE THE APP IS KILLED.
+//
+// IMPORTANT: This runs in a SEPARATE Dart isolate — it cannot access any
+// static state from the running app. Firebase must be re-initialized here.
+// =============================================================================
+@pragma('vm:entry-point')
+Future<void> onNotificationActionBackground(
+  NotificationResponse response,
+) async {
+  // Only the Decline button has showsUserInterface:false, so this handler
+  // only needs to handle decline. Accept opens the app normally.
+  if (response.actionId != 'decline_call') return;
+
+  try {
+    final payload = response.payload;
+    if (payload == null || payload.isEmpty) return;
+
+    final data = jsonDecode(payload) as Map<String, dynamic>;
+    final callId = data['callId'] as String?;
+    if (callId == null || callId.isEmpty) return;
+
+    // Initialize Firebase in this background isolate so we can write Firestore.
+    await Firebase.initializeApp();
+
+    await FirebaseFirestore.instance
+        .collection('calls')
+        .doc(callId)
+        .update({'status': 'rejected'});
+
+    debugPrint('📞 [BG] Call $callId rejected from notification shade');
+  } catch (e) {
+    debugPrint('❌ [BG] Background decline failed: $e');
+  }
+}
 
 // =============================================================================
 // NotificationService
@@ -36,15 +77,23 @@ class NotificationService {
   );
 
   // Dedicated high-priority channel for incoming calls.
-  // fullScreenIntent requires this channel to have Importance.max.
+  // Uses the device's default RINGTONE sound (not notification sound).
+  // Channel ID is versioned — changing the sound requires a new channel ID
+  // because Android locks channel settings after first creation.
   static const AndroidNotificationChannel _callChannel =
       AndroidNotificationChannel(
-    'call_channel',
+    'call_channel_v2',
     'Incoming Calls',
     description: 'Ringing notifications for incoming voice and video calls',
     importance: Importance.max,
     playSound: true,
+    // Use the device's chosen default ringtone so it sounds like a real call.
+    // RawResourceAndroidNotificationSound('ringtone') can be used instead
+    // if you bundle a custom audio file at android/app/src/main/res/raw/ringtone.mp3
+    sound: UriAndroidNotificationSound('content://settings/system/ringtone'),
     enableVibration: true,
+    enableLights: true,
+    ledColor: Color(0xFF00FF00),
   );
 
   static bool _isInitialized = false;
@@ -82,11 +131,39 @@ class NotificationService {
 
   /// Set this in main.dart to open IncomingCallScreen when a call notification
   /// is tapped while the app is in background or killed state.
-  static Function(String callId)? onCallNotificationTap;
+  /// [actionId] will be 'accept_call' when the user tapped ✅ Accept.
+  static Function(String callId, {String? actionId})? onCallNotificationTap;
+
+  /// Set this in main.dart to silently decline a call when the user taps
+  /// the "Decline" action button on the notification shade.
+  static Function(String callId)? onCallDeclineTap;
 
   // ---------------------------------------------------------------------------
-  // Initialization
+  // Incoming call suppression (prevents auth_wrapper from pushing a duplicate
+  // IncomingCallScreen when main.dart already navigated to CallingScreen).
   // ---------------------------------------------------------------------------
+
+  /// The callId currently being handled via a notification Accept tap.
+  /// auth_wrapper checks this before pushing IncomingCallScreen.
+  static String? _suppressedCallId;
+
+  /// Call before navigating to CallingScreen from an Accept notification tap.
+  /// Prevents auth_wrapper._listenForIncomingCalls from pushing a duplicate
+  /// IncomingCallScreen over the CallingScreen we're about to show.
+  static void suppressIncomingCallUI(String callId) {
+    _suppressedCallId = callId;
+  }
+
+  /// Returns true if auth_wrapper should skip pushing IncomingCallScreen for
+  /// this callId (because main.dart is already navigating to CallingScreen).
+  static bool isIncomingCallSuppressed(String callId) {
+    return _suppressedCallId == callId;
+  }
+
+  /// Clear suppression after the call screen has been shown.
+  static void clearSuppressedCall() {
+    _suppressedCallId = null;
+  }
 
   static Future<void> initialize() async {
     if (_isInitialized) return;
@@ -132,6 +209,7 @@ class NotificationService {
       await _localNotifications.initialize(
         initSettings,
         onDidReceiveNotificationResponse: _onNotificationTapped,
+        onDidReceiveBackgroundNotificationResponse: onNotificationActionBackground,
       );
 
       await _messaging.setForegroundNotificationPresentationOptions(
@@ -177,22 +255,23 @@ class NotificationService {
   // ---------------------------------------------------------------------------
 
   static Future<void> _handleForegroundMessage(RemoteMessage message) async {
-    debugPrint('📩 Foreground message received: ${message.data}');
+    if (kDebugMode) debugPrint('📩 Foreground message received: ${message.data}');
 
     final type = message.data['type'] as String?;
+
+    // For CALL type: the incomingCallProvider Firestore stream already pushes
+    // IncomingCallScreen when the app is foreground. Showing a local
+    // notification here would create a duplicate the user sees simultaneously.
+    if (type == 'call') {
+      if (kDebugMode) debugPrint('📞 Foreground call — skipping notification (Firestore stream handles UI)');
+      return;
+    }
 
     // Suppress if user is already in the chat that sent this message
     final chatId = message.data['chatId'] as String?;
     if (chatId != null && chatId == _activeChatId) {
-      debugPrint('🔕 Suppressing notification — user is in chat: $chatId');
+      if (kDebugMode) debugPrint('🔕 Suppressing notification — user is in chat: $chatId');
       return;
-    }
-
-    // For call-type notifications: show them so the callee can open
-    // IncomingCallScreen. The incomingCallProvider handles foreground
-    // via Firestore streaming; FCM is mainly for background/killed states.
-    if (type == 'call') {
-      debugPrint('📞 Call notification — showing for background wake');
     }
 
     await showLocalNotification(message);
@@ -215,8 +294,9 @@ class NotificationService {
       NotificationDetails details;
 
       if (type == 'call') {
-        // Full-screen intent makes this behave like a system call screen
-        // on Android 10+ (requires USE_FULL_SCREEN_INTENT permission).
+        // Full-screen intent pops over the lock screen (Android 10+).
+        // On an unlocked screen it appears as a heads-up banner — we add
+        // Accept / Decline action buttons so users can answer from the shade.
         final androidDetails = AndroidNotificationDetails(
           _callChannel.id,
           _callChannel.name,
@@ -225,10 +305,33 @@ class NotificationService {
           priority: Priority.max,
           icon: '@mipmap/ic_launcher',
           playSound: true,
+          // Use system ringtone — matches the channel sound
+          sound: const UriAndroidNotificationSound(
+            'content://settings/system/ringtone',
+          ),
           enableVibration: true,
+          // Repeating vibration: wait 0ms, buzz 1s, pause 0.5s, buzz 1s...
+          vibrationPattern: Int64List.fromList([0, 1000, 500, 1000, 500, 1000]),
           fullScreenIntent: true,
           category: AndroidNotificationCategory.call,
           styleInformation: BigTextStyleInformation(body, contentTitle: title),
+          actions: const <AndroidNotificationAction>[
+            AndroidNotificationAction(
+              'accept_call',
+              '✅ Accept',
+              showsUserInterface: true, // brings app to foreground
+              cancelNotification: true,
+            ),
+            AndroidNotificationAction(
+              'decline_call',
+              '❌ Decline',
+              // showsUserInterface: false — decline happens entirely in
+              // onNotificationActionBackground (background isolate) without
+              // opening the app. The caller sees 'rejected' via Firestore.
+              showsUserInterface: false,
+              cancelNotification: true,
+            ),
+          ],
         );
         const iosDetails = DarwinNotificationDetails(
           presentAlert: true,
@@ -275,7 +378,7 @@ class NotificationService {
     if (response.payload != null) {
       try {
         final data = jsonDecode(response.payload!) as Map<String, dynamic>;
-        _processNotificationData(data);
+        _processNotificationData(data, actionId: response.actionId);
       } catch (e) {
         debugPrint('❌ Error processing notification tap: $e');
         if (kDebugMode) rethrow;
@@ -283,17 +386,24 @@ class NotificationService {
     }
   }
 
-  static void _processNotificationData(Map<String, dynamic> data) {
+  static void _processNotificationData(
+    Map<String, dynamic> data, {
+    String? actionId,
+  }) {
     final type = data['type'] as String?;
 
     switch (type) {
       case 'call':
-        // App was killed/background — user tapped the call notification.
-        // Open IncomingCallScreen for the given callId.
         final callId = data['callId'] as String?;
-        if (callId != null && callId.isNotEmpty) {
-          debugPrint('📞 Call notification tapped — callId: $callId');
-          onCallNotificationTap?.call(callId);
+        if (callId == null || callId.isEmpty) break;
+
+        if (actionId == 'decline_call') {
+          debugPrint('📞 Call declined from notification — callId: $callId');
+          onCallDeclineTap?.call(callId);
+        } else {
+          // Regular tap or Accept button — pass actionId so caller can auto-accept
+          debugPrint('📞 Call tapped/accepted — callId: $callId, action: $actionId');
+          onCallNotificationTap?.call(callId, actionId: actionId);
         }
         break;
       case 'message':
@@ -478,15 +588,40 @@ class NotificationService {
           await _localNotifications.getNotificationAppLaunchDetails();
       if (details?.didNotificationLaunchApp == true) {
         final payload = details?.notificationResponse?.payload;
+        final actionId = details?.notificationResponse?.actionId;
         if (payload != null && payload.isNotEmpty) {
           debugPrint('📲 App launched from local notification: $payload');
           final data = jsonDecode(payload) as Map<String, dynamic>;
-          _processNotificationData(data);
+          _processNotificationData(data, actionId: actionId);
         }
       }
     } catch (e) {
       debugPrint('❌ checkNotificationLaunchDetails error: $e');
     }
+  }
+
+  /// Pre-extract the call ID from a notification that launched the app
+  /// from killed state. Call this BEFORE runApp() to avoid the brief
+  /// SplashScreen flash when navigating to IncomingCallScreen.
+  static Future<({String callId, String? actionId})?> extractPendingCall() async {
+    try {
+      final details =
+          await _localNotifications.getNotificationAppLaunchDetails();
+      if (details?.didNotificationLaunchApp == true) {
+        final payload = details?.notificationResponse?.payload;
+        final actionId = details?.notificationResponse?.actionId;
+        if (payload != null && payload.isNotEmpty) {
+          final data = jsonDecode(payload) as Map<String, dynamic>;
+          if (data['type'] == 'call') {
+            final callId = data['callId'] as String?;
+            if (callId != null && callId.isNotEmpty) {
+              return (callId: callId, actionId: actionId);
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Checks Firebase for a message that launched the app from killed state

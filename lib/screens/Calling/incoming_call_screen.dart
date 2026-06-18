@@ -5,6 +5,8 @@
 // Reject → calls WebRtcService.rejectCall() and dismisses.
 
 import 'dart:async';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:vibetalk/models/call_model.dart';
 import 'package:vibetalk/screens/Calling/calling_screen.dart';
@@ -13,8 +15,15 @@ import 'package:vibetalk/theme/app_theme.dart';
 
 class IncomingCallScreen extends StatefulWidget {
   final CallModel call;
+  /// When true (tapped Accept on notification shade), navigates directly
+  /// to CallingScreen without waiting for the user to tap Accept again.
+  final bool autoAccept;
 
-  const IncomingCallScreen({super.key, required this.call});
+  const IncomingCallScreen({
+    super.key,
+    required this.call,
+    this.autoAccept = false,
+  });
 
   @override
   State<IncomingCallScreen> createState() => _IncomingCallScreenState();
@@ -24,16 +33,15 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
-
   StreamSubscription? _callDocSub;
+
+  // Looping ringtone — plays until the user accepts, declines, or caller hangs up.
+  final AudioPlayer _ringtone = AudioPlayer();
 
   @override
   void initState() {
     super.initState();
 
-    // Keep the controller in [0, 1] — use a Tween for the actual scale range.
-    // DO NOT set lowerBound/upperBound outside [0,1]; CurvedAnimation will
-    // assert-fail when it receives a value outside that range.
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -49,19 +57,48 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
       if (call == null ||
           call.status == 'ended' ||
           call.status == 'rejected') {
+        _stopRingtone();
         Navigator.of(context).pop();
       }
     });
+
+    // Start ringtone — content URI plays the device's selected ringtone.
+    // Loop so it keeps ringing until accepted or rejected.
+    _startRingtone();
+
+    // Auto-accept when triggered from the notification Accept button.
+    if (widget.autoAccept) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _accept());
+    }
+  }
+
+  Future<void> _startRingtone() async {
+    try {
+      await _ringtone.setReleaseMode(ReleaseMode.loop);
+      await _ringtone.play(
+        DeviceFileSource('content://settings/system/ringtone'),
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('⚠️ Ringtone error: $e');
+    }
+  }
+
+  Future<void> _stopRingtone() async {
+    try {
+      await _ringtone.stop();
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _ringtone.dispose();
     _pulseCtrl.dispose();
     _callDocSub?.cancel();
     super.dispose();
   }
 
   Future<void> _accept() async {
+    await _stopRingtone();
     _callDocSub?.cancel();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -72,6 +109,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
   }
 
   Future<void> _reject() async {
+    await _stopRingtone();
     _callDocSub?.cancel();
     await WebRtcService.instance.rejectCall(widget.call.callId);
     if (mounted) Navigator.of(context).pop();

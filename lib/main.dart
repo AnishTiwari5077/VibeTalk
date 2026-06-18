@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:vibetalk/models/call_model.dart';
 import 'package:vibetalk/screens/Authstate/auth_wrapper.dart';
+import 'package:vibetalk/screens/Calling/calling_screen.dart';
 import 'package:vibetalk/screens/Calling/incoming_call_screen.dart';
 import 'package:vibetalk/screens/Conservation/conversation_screen.dart';
 import 'package:vibetalk/models/user_model.dart';
@@ -76,7 +77,35 @@ void main() async {
   await _requestAllPermissions();
   await NotificationService.initialize();
 
-  runApp(const ProviderScope(child: MyApp()));
+  // Pre-extract any pending call from a notification that launched the app
+  // from killed state. Doing this BEFORE runApp prevents SplashScreen flash.
+  final pendingCall = await NotificationService.extractPendingCall();
+
+  // If the user tapped ✅ Accept on the notification, pre-fetch the CallModel
+  // NOW (before runApp) so the UI can navigate instantly without an extra
+  // Firestore round-trip after the first frame.
+  CallModel? pendingCallModel;
+  if (pendingCall?.actionId == 'accept_call') {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('calls')
+          .doc(pendingCall!.callId)
+          .get();
+      if (snap.exists && snap.data() != null) {
+        final call = CallModel.fromMap(snap.data()!);
+        if (call.status == 'ringing') {
+          pendingCallModel = call;
+          debugPrint('✅ Pre-fetched call model for instant CallingScreen');
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Could not pre-fetch call model: $e');
+    }
+  }
+
+  runApp(ProviderScope(
+    child: MyApp(pendingCall: pendingCall, pendingCallModel: pendingCallModel),
+  ));
 
   // Warm-up FCM token in background — don't block runApp
   _ensureFcmTokenReady();
@@ -86,7 +115,15 @@ void main() async {
 // App widget
 // ─────────────────────────────────────────────────────────
 class MyApp extends ConsumerStatefulWidget {
-  const MyApp({super.key});
+  /// Pre-extracted pending call from a notification that launched the app
+  /// from killed state. Null when the app was opened normally.
+  final ({String callId, String? actionId})? pendingCall;
+
+  /// Pre-fetched CallModel for instant Accept navigation (avoids a
+  /// Firestore round-trip after the first frame when Accept was tapped).
+  final CallModel? pendingCallModel;
+
+  const MyApp({super.key, this.pendingCall, this.pendingCallModel});
 
   @override
   ConsumerState<MyApp> createState() => _MyAppState();
@@ -102,12 +139,43 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       NotificationService.onNotificationTap = _handleNotificationTap;
-      NotificationService.onCallNotificationTap = _handleCallNotificationTap;
-      // Check both paths for killed-state notification launches:
-      //   1. Local notification shown by background handler → checkNotificationLaunchDetails
-      //   2. FCM notification+data message → getInitialMessage
-      NotificationService.checkNotificationLaunchDetails();
-      NotificationService.getInitialMessage();
+      NotificationService.onCallNotificationTap = (callId, {actionId}) =>
+          _handleCallNotificationTap(callId, actionId: actionId);
+      NotificationService.onCallDeclineTap = _handleCallDeclineTap;
+
+      final pending = widget.pendingCall;
+      if (pending != null) {
+        // App was launched from a call notification — route immediately.
+        if (pending.actionId == 'decline_call') {
+          _handleCallDeclineTap(pending.callId);
+        } else if (pending.actionId == 'accept_call') {
+          // Suppress BEFORE any async work.
+          NotificationService.suppressIncomingCallUI(pending.callId);
+
+          final preloadedCall = widget.pendingCallModel;
+          if (preloadedCall != null) {
+            // Call model already fetched in main() — navigate instantly.
+            final ctx = navigatorKey.currentContext;
+            if (ctx != null && ctx.mounted) {
+              Navigator.of(ctx).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      CallingScreen(call: preloadedCall, isCaller: false),
+                ),
+              ).then((_) => NotificationService.clearSuppressedCall());
+            }
+          } else {
+            // Fallback: fetch from Firestore (slower path).
+            _handleCallNotificationTap(pending.callId, actionId: pending.actionId);
+          }
+        } else {
+          _handleCallNotificationTap(pending.callId, actionId: pending.actionId);
+        }
+      } else {
+        // Normal launch — check for edge-case notification launches
+        NotificationService.checkNotificationLaunchDetails();
+        NotificationService.getInitialMessage();
+      }
     });
   }
 
@@ -151,14 +219,20 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   }
 
   // ── Call notification tap (app killed/background) ─────────────────────────
-  void _handleCallNotificationTap(String callId) async {
-    debugPrint('📞 Call notification tapped — callId: $callId');
+  void _handleCallNotificationTap(String callId, {String? actionId}) async {
+    debugPrint('📞 Call notification — callId: $callId, action: $actionId');
+
+    // Set suppression SYNCHRONOUSLY before any async work.
+    // This guarantees auth_wrapper._listenForIncomingCalls sees it before
+    // the incomingCallProvider Firestore stream emits.
+    if (actionId == 'accept_call') {
+      NotificationService.suppressIncomingCallUI(callId);
+    }
 
     final context = navigatorKey.currentContext;
     if (context == null) return;
 
     try {
-      // Fetch the call document from Firestore
       final snap = await FirebaseFirestore.instance
           .collection('calls')
           .doc(callId)
@@ -166,25 +240,51 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
 
       if (!snap.exists || snap.data() == null) {
         debugPrint('⚠️ Call $callId no longer exists');
+        NotificationService.clearSuppressedCall();
         return;
       }
 
       final call = CallModel.fromMap(snap.data()!);
 
-      // Only navigate if the call is still ringing
       if (call.status != 'ringing') {
         debugPrint('⚠️ Call $callId is no longer ringing (${call.status})');
+        NotificationService.clearSuppressedCall();
         return;
       }
 
       if (!context.mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => IncomingCallScreen(call: call),
-        ),
-      );
+
+      if (actionId == 'accept_call') {
+        // User tapped ✅ Accept on notification shade — skip IncomingCallScreen.
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => CallingScreen(call: call, isCaller: false),
+          ),
+        ).then((_) => NotificationService.clearSuppressedCall());
+      } else {
+        // Regular tap — show IncomingCallScreen normally.
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => IncomingCallScreen(call: call)),
+        );
+      }
     } catch (e) {
+      NotificationService.clearSuppressedCall();
       debugPrint('❌ Failed to load call $callId: $e');
+    }
+  }
+
+  // ── Decline from notification banner (app killed/background) ──────────────
+  // The user tapped ❌ Decline on the notification shade.
+  // We update Firestore status to 'rejected' without showing IncomingCallScreen.
+  void _handleCallDeclineTap(String callId) async {
+    debugPrint('📞 Call declined from notification — callId: $callId');
+    try {
+      await FirebaseFirestore.instance.collection('calls').doc(callId).update({
+        'status': 'rejected',
+      });
+      debugPrint('✅ Call $callId marked rejected');
+    } catch (e) {
+      debugPrint('❌ Failed to decline call $callId: $e');
     }
   }
 
