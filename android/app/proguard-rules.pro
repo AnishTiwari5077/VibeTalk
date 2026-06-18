@@ -8,6 +8,21 @@
 -dontwarn io.flutter.**
 
 # ============================================================
+# WebRTC (flutter_webrtc plugin)
+# R8 strips these in release — call buttons become dead taps.
+# ============================================================
+-keep class org.webrtc.** { *; }
+-keepclassmembers class org.webrtc.** { *; }
+-dontwarn org.webrtc.**
+-keep class com.cloudwebrtc.** { *; }
+-keepclassmembers class com.cloudwebrtc.** { *; }
+-dontwarn com.cloudwebrtc.**
+# Keep JNI-loaded native symbols used by libwebrtc
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# ============================================================
 # ZEGOCLOUD / ZegoUIKit
 # ============================================================
 -keep class im.zego.** { *; }
@@ -22,8 +37,6 @@
 -keep class com.google.android.gms.** { *; }
 -dontwarn com.google.firebase.**
 -dontwarn com.google.android.gms.**
-
-# Firebase Messaging
 -keep class com.google.firebase.messaging.** { *; }
 -keep class com.google.firebase.iid.** { *; }
 
@@ -64,7 +77,7 @@
 -dontwarn kotlinx.**
 
 # ============================================================
-# Keep app's MainActivity
+# Keep app classes
 # ============================================================
 -keep class com.anish.vibetalk.** { *; }
 -keep class com.example.new_chart.** { *; }

@@ -155,26 +155,33 @@ class _ChatListItem extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // ✅ OPTIMIZED: Use participantsData from chat instead of separate query
     final participantData = chat.participantsData?[friendId];
 
+    // Always watch fresh user data so avatar updates are reflected immediately.
+    // participantsData.avatarUrl can be stale (set at chat creation time).
+    // userCacheProvider keeps data for 5 min — fast after first fetch.
+    final friendAsync = ref.watch(userCacheProvider(friendId));
+    final freshUser = friendAsync.asData?.value;
+
     if (participantData != null) {
-      // Use cached data from chat document
       return _buildChatTile(
         context,
-        username: participantData['username'] as String? ?? 'Unknown',
-        avatarUrl: participantData['avatarUrl'] as String?,
-        isOnline: false, // We don't have real-time status from cached data
+        username:
+            participantData['username'] as String? ??
+            freshUser?.username ??
+            'Unknown',
+        // Fresh avatar overrides stale cached value.
+        // Falls back to cached if Firestore hasn't responded yet.
+        avatarUrl:
+            freshUser?.avatarUrl ?? participantData['avatarUrl'] as String?,
+        isOnline: freshUser?.isOnline ?? false,
       );
     }
 
-    // Fallback: fetch user data (rarely needed if participantsData is populated)
-    final friendAsync = ref.watch(userCacheProvider(friendId));
-
+    // Fallback: no participantsData at all — wait for userCacheProvider
     return friendAsync.when(
       data: (friend) {
         if (friend == null) return const SizedBox.shrink();
-
         return _buildChatTile(
           context,
           username: friend.username,

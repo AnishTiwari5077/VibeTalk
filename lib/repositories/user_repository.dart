@@ -198,9 +198,30 @@ class UserRepository {
 
   Future<void> updateAvatar(String uid, String avatarUrl) async {
     try {
+      // 1. Update the user document.
       await _firestore.collection('users').doc(uid).update({
         'avatarUrl': avatarUrl,
       });
+
+      // 2. Propagate the new avatar to every chat where this user is a
+      //    participant.  participantsData is cached in the chat document and
+      //    is used by ChatListScreen for fast avatar display — without this
+      //    update the chat list would show the old (or missing) avatar until
+      //    the next time the chat is fully re-created.
+      final chatsSnap = await _firestore
+          .collection('chats')
+          .where('participants', arrayContains: uid)
+          .get();
+
+      if (chatsSnap.docs.isNotEmpty) {
+        final batch = _firestore.batch();
+        for (final doc in chatsSnap.docs) {
+          batch.update(doc.reference, {
+            'participantsData.$uid.avatarUrl': avatarUrl,
+          });
+        }
+        await batch.commit();
+      }
     } catch (e) {
       rethrow;
     }
