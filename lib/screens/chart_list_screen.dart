@@ -1,4 +1,3 @@
-import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vibetalk/core/date_formattor.dart';
 import 'package:vibetalk/models/chart_model.dart';
 import 'package:vibetalk/providers/chart_provider.dart';
+import 'package:vibetalk/providers/user_cache_provider.dart';
 
 import 'package:vibetalk/screens/Conservation/conversation_screen.dart';
 import 'package:vibetalk/widgets/empty_state.dart';
@@ -16,22 +16,6 @@ import '../../models/user_model.dart';
 
 import '../../theme/app_theme.dart';
 
-// ✅ OPTIMIZED: Cache user data with auto-dispose
-final userCacheProvider = FutureProvider.family.autoDispose<UserModel?, String>(
-  (ref, uid) async {
-    // Keep cache alive for 5 minutes
-    final link = ref.keepAlive();
-    final timer = Timer(const Duration(minutes: 5), () {
-      link.close();
-    });
-
-    ref.onDispose(() {
-      timer.cancel();
-    });
-
-    return ref.read(userRepositoryProvider).getUser(uid);
-  },
-);
 
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
