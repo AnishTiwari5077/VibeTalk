@@ -423,35 +423,34 @@ class ConversationController {
     required String senderId,
   }) async {
     try {
-      // Prefer the already-loaded FCM token from the friend model to avoid
-      // an extra Firestore round-trip on every single message. Fall back to
-      // Firestore only when the cached token is empty (e.g., stale model).
-      String? receiverToken = friend.fcmToken.isNotEmpty ? friend.fcmToken : null;
-      bool isReceiverOnline = friend.isOnline;
-      String? receiverChatId = friend.typingInChatId;
+      // Prefer the cached FCM token from the friend model to avoid a Firestore
+      // round-trip for the token. HOWEVER, always fetch fresh status fields
+      // (isOnline, typingInChatId) — the friend model is a snapshot from when
+      // the conversation screen opened and can be stale. Using stale status
+      // would cause the "receiver is in chat" check to fire even after the
+      // receiver has left the chat, silently dropping the notification.
+      String? receiverToken =
+          friend.fcmToken.isNotEmpty ? friend.fcmToken : null;
 
-      if (receiverToken == null) {
-        debugPrint('⚠️ FCM token not in model — fetching from Firestore');
-        final receiverDoc = await _firestore
-            .collection('users')
-            .doc(receiverId)
-            .get();
+      final receiverDoc = await _firestore
+          .collection('users')
+          .doc(receiverId)
+          .get();
 
-        if (!receiverDoc.exists) {
-          debugPrint('❌ Receiver not found in Firestore');
-          return;
-        }
-
-        final receiverData = receiverDoc.data();
-        if (receiverData == null) {
-          debugPrint('❌ Receiver data is null');
-          return;
-        }
-
-        receiverToken = receiverData['fcmToken'] as String?;
-        isReceiverOnline = receiverData['isOnline'] == true;
-        receiverChatId = receiverData['typingInChatId'] as String?;
+      if (!receiverDoc.exists || receiverDoc.data() == null) {
+        debugPrint('❌ Receiver not found in Firestore');
+        return;
       }
+
+      final receiverData = receiverDoc.data()!;
+
+      // Use Firestore token if cached model had none.
+      receiverToken ??= receiverData['fcmToken'] as String?;
+
+      // Always use FRESH status — never the stale model snapshot.
+      final bool isReceiverOnline = receiverData['isOnline'] == true;
+      final String? receiverChatId =
+          receiverData['typingInChatId'] as String?;
 
       if (receiverToken == null || receiverToken.isEmpty) {
         debugPrint('❌ Receiver has no FCM token');
@@ -462,8 +461,9 @@ class ConversationController {
         '📱 Receiver token found: ${receiverToken.substring(0, 20)}...',
       );
 
-      // Only send notification if receiver is not currently viewing this chat
-      final isReceiverInThisChat = isReceiverOnline && receiverChatId == chatId;
+      // Only skip if receiver is actively viewing THIS exact chat right now.
+      final isReceiverInThisChat =
+          isReceiverOnline && receiverChatId == chatId;
 
       if (!isReceiverInThisChat) {
         debugPrint('📤 Sending push notification...');
@@ -486,7 +486,7 @@ class ConversationController {
       }
     } catch (e) {
       debugPrint('❌ Error sending push notification: $e');
-      // Don’t throw - notification failure shouldn’t stop message sending
+      // Don't throw - notification failure shouldn't stop message sending
     }
   }
 
