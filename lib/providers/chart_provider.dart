@@ -281,6 +281,17 @@ class ChatService {
     }
   }
 
+  /// Deletes all messages AND the chat document.
+  /// Both participants will no longer see this chat in their list.
+  Future<void> deleteChat(String chatId) async {
+    try {
+      await clearConversation(chatId);
+      await _firestore.collection('chats').doc(chatId).delete();
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   Future<String> getOrCreateChat(String otherUserId) async {
     try {
       final currentUser = ref.read(currentUserProvider).value;

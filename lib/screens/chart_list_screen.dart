@@ -17,11 +17,89 @@ import '../../models/user_model.dart';
 import '../../theme/app_theme.dart';
 
 
-class ChatListScreen extends ConsumerWidget {
+class ChatListScreen extends ConsumerStatefulWidget {
   const ChatListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ChatListScreen> createState() => _ChatListScreenState();
+}
+
+class _ChatListScreenState extends ConsumerState<ChatListScreen> {
+  // Optimistic removal set — hides chats that were swiped away but not yet
+  // deleted from Firestore (allows undo without a Firestore read).
+  final Set<String> _dismissedChatIds = {};
+
+  void _onDeleteChat(String chatId, String friendName) {
+    setState(() => _dismissedChatIds.add(chatId));
+
+    bool undone = false;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+
+    messenger
+        .showSnackBar(
+          SnackBar(
+            content: Text('Conversation with $friendName deleted'),
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.grey.shade900,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            action: SnackBarAction(
+              label: 'UNDO',
+              textColor: Colors.redAccent,
+              onPressed: () {
+                undone = true;
+                setState(() => _dismissedChatIds.remove(chatId));
+              },
+            ),
+          ),
+        )
+        .closed
+        .then((_) {
+          if (!undone) {
+            ref.read(chatServiceProvider).deleteChat(chatId).catchError(
+              (e) => debugPrint('❌ Delete chat error: $e'),
+            );
+            setState(() => _dismissedChatIds.remove(chatId));
+          }
+        });
+  }
+
+  Future<void> _confirmDeleteChat(
+    BuildContext ctx,
+    String chatId,
+    String friendName,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Conversation'),
+        content: Text(
+          'Delete your conversation with $friendName? '
+          'This cannot be undone for the other person.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) _onDeleteChat(chatId, friendName);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final chatsAsync = ref.watch(chatListProvider);
     final currentUser = ref.watch(currentUserProvider).value;
     final theme = Theme.of(context);
@@ -30,7 +108,12 @@ class ChatListScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Chats'), elevation: 0),
       body: chatsAsync.when(
-        data: (chats) {
+        data: (allChats) {
+          // Filter out optimistically-dismissed chats
+          final chats = allChats
+              .where((c) => !_dismissedChatIds.contains(c.chatId))
+              .toList();
+
           if (chats.isEmpty) {
             return const EmptyState(
               icon: Icons.chat_bubble_outline,
@@ -39,7 +122,6 @@ class ChatListScreen extends ConsumerWidget {
             );
           }
 
-          // ✅ OPTIMIZED: Added keys and better list building
           return ListView.separated(
             key: const PageStorageKey('chat_list'),
             itemCount: chats.length,
@@ -56,14 +138,24 @@ class ChatListScreen extends ConsumerWidget {
                 (id) => id != currentUser?.uid,
               );
 
-              // ✅ OPTIMIZED: Use cached user data instead of stream
-              return _ChatListItem(
-                key: ValueKey(chat.chatId), // ✅ Added key for optimization
-                chat: chat,
-                friendId: friendId,
-                currentUserId: currentUser?.uid,
-                theme: theme,
-                isDark: isDark,
+              final friendName =
+                  chat.participantsData?[friendId]?['username'] as String? ??
+                  'Unknown';
+
+              return _SwipeToDeleteWrapper(
+                key: ValueKey('swipe_${chat.chatId}'),
+                chatId: chat.chatId,
+                onDelete: () => _onDeleteChat(chat.chatId, friendName),
+                onLongPress: () =>
+                    _confirmDeleteChat(context, chat.chatId, friendName),
+                child: _ChatListItem(
+                  key: ValueKey(chat.chatId),
+                  chat: chat,
+                  friendId: friendId,
+                  currentUserId: currentUser?.uid,
+                  theme: theme,
+                  isDark: isDark,
+                ),
               );
             },
           );
@@ -119,6 +211,79 @@ class ChatListScreen extends ConsumerWidget {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Swipe-to-delete wrapper
+// ---------------------------------------------------------------------------
+
+class _SwipeToDeleteWrapper extends ConsumerWidget {
+  final String chatId;
+  final Widget child;
+  final VoidCallback onDelete;
+  final VoidCallback onLongPress;
+
+  const _SwipeToDeleteWrapper({
+    super.key,
+    required this.chatId,
+    required this.child,
+    required this.onDelete,
+    required this.onLongPress,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Dismissible(
+      key: ValueKey('dismissible_$chatId'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFFF5252), Color(0xFFD32F2F)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.6, end: 1.0),
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.elasticOut,
+              builder: (ctx, scale, child) =>
+                  Transform.scale(scale: scale, child: child),
+              child: const Icon(
+                Icons.delete_rounded,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Delete',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+      confirmDismiss: (_) async {
+        onDelete();
+        return true;
+      },
+      child: GestureDetector(
+        onLongPress: onLongPress,
+        child: child,
+      ),
+    );
+  }
+}
+
 
 // ✅ OPTIMIZED: Extracted to separate widget to prevent rebuilds
 class _ChatListItem extends ConsumerWidget {
