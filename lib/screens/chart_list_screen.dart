@@ -63,7 +63,10 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
             ref.read(chatServiceProvider).deleteChat(chatId).catchError(
               (e) => debugPrint('❌ Delete chat error: $e'),
             );
-            setState(() => _dismissedChatIds.remove(chatId));
+            // DO NOT remove chatId from _dismissedChatIds here.
+            // Removing it before Firestore confirms deletion causes a 1-second
+            // flash where the deleted chat reappears. The stale entry is cleaned
+            // up lazily in build() once Firestore stream no longer includes it.
           }
         });
   }
@@ -109,6 +112,12 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
       appBar: AppBar(title: const Text('Chats'), elevation: 0),
       body: chatsAsync.when(
         data: (allChats) {
+          // Clean up stale dismissed IDs — chats that Firestore has already
+          // removed from the list no longer need to be tracked.
+          _dismissedChatIds.removeWhere(
+            (id) => !allChats.any((c) => c.chatId == id),
+          );
+
           // Filter out optimistically-dismissed chats
           final chats = allChats
               .where((c) => !_dismissedChatIds.contains(c.chatId))
@@ -272,10 +281,11 @@ class _SwipeToDeleteWrapper extends ConsumerWidget {
           ],
         ),
       ),
-      confirmDismiss: (_) async {
-        onDelete();
-        return true;
-      },
+      // onDismissed fires AFTER the slide-away animation completes.
+      // Using onDismissed (not confirmDismiss) prevents a double-removal:
+      // confirmDismiss+return true would remove the widget from the tree AND
+      // _dismissedChatIds would also hide it, causing a layout jump.
+      onDismissed: (_) => onDelete(),
       child: GestureDetector(
         onLongPress: onLongPress,
         child: child,

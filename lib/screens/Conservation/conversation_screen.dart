@@ -631,6 +631,20 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final currentUser = ref.watch(currentUserProvider).value;
     final friendAsync = ref.watch(userStreamProvider(widget.friend.uid));
 
+    // Real-time read receipts: whenever new messages arrive while this screen
+    // is open, mark any unread ones addressed to us as read immediately.
+    ref.listen<AsyncValue<List<MessageModel>>>(
+      messagesProvider(widget.chatId),
+      (_, next) {
+        final msgs = next.asData?.value;
+        if (msgs == null || _currentUserId == null) return;
+        final hasUnread = msgs.any(
+          (m) => !m.isRead && m.receiverId == _currentUserId,
+        );
+        if (hasUnread) _controller.markMessagesAsRead();
+      },
+    );
+
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final isBlocked = currentUser != null

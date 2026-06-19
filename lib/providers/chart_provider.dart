@@ -217,37 +217,39 @@ class ChatService {
 
   Future<void> markMessagesAsRead(String chatId, String currentUserId) async {
     try {
-      final messages = await _firestore
-          .collection('chats')
-          .doc(chatId)
-          .collection('messages')
-          .where('receiverId', isEqualTo: currentUserId)
-          .where('isRead', isEqualTo: false)
-          .limit(50)
-          .get();
+      // Process ALL unread messages in batches of 500.
+      // limit(50) caused a bug: counter reset to 0 but messages 51+
+      // remained isRead=false, so the next message showed a wrong badge count.
+      while (true) {
+        final messages = await _firestore
+            .collection('chats')
+            .doc(chatId)
+            .collection('messages')
+            .where('receiverId', isEqualTo: currentUserId)
+            .where('isRead', isEqualTo: false)
+            .limit(500)
+            .get();
 
-      if (messages.docs.isEmpty) {
-        await _firestore.collection('chats').doc(chatId).update({
-          'unreadCount.$currentUserId': 0,
-        });
-        return;
+        if (messages.docs.isEmpty) break;
+
+        final batch = _firestore.batch();
+        for (final doc in messages.docs) {
+          batch.update(doc.reference, {'isRead': true});
+        }
+        await batch.commit();
+
+        if (messages.docs.length < 500) break; // last page
       }
 
-      final batch = _firestore.batch();
-
-      batch.update(_firestore.collection('chats').doc(chatId), {
+      // Reset badge counter once, after all messages are marked.
+      await _firestore.collection('chats').doc(chatId).update({
         'unreadCount.$currentUserId': 0,
       });
-
-      for (var doc in messages.docs) {
-        batch.update(doc.reference, {'isRead': true});
-      }
-
-      await batch.commit();
     } catch (e) {
       rethrow;
     }
   }
+
 
   Future<void> clearConversation(String chatId) async {
     try {
