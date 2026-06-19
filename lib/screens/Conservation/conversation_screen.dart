@@ -12,6 +12,7 @@ import 'package:vibetalk/providers/auth_provider.dart';
 import 'package:vibetalk/providers/chart_provider.dart';
 import 'package:vibetalk/providers/user_provider.dart';
 import 'package:vibetalk/screens/Conservation/conversation_controller.dart';
+import 'package:vibetalk/screens/friend_profile_screen.dart';
 import 'package:vibetalk/services/notification_services.dart';
 
 import 'package:vibetalk/theme/app_theme.dart';
@@ -818,14 +819,25 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   data: (friend) {
                     if (friend == null) return Text(widget.friend.username);
 
-                    return Row(
+                    final liveUser = friend;
+                    return GestureDetector(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              FriendProfileScreen(friend: liveUser),
+                        ),
+                      ),
+                      child: Row(
                       children: [
                         Stack(
                           children: [
-                            UserAvatar(
-                              imageUrl: friend.avatarUrl,
-                              radius: 20,
-                              showOnlineIndicator: false,
+                            Hero(
+                              tag: 'friend_avatar_${friend.uid}',
+                              child: UserAvatar(
+                                imageUrl: friend.avatarUrl,
+                                radius: 20,
+                                showOnlineIndicator: false,
+                              ),
                             ),
                             if (friend.isOnline)
                               Positioned(
@@ -891,6 +903,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                           ),
                         ),
                       ],
+                    ),
                     );
                   },
                   loading: () => Row(
