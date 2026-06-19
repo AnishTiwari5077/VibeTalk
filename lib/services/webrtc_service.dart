@@ -300,6 +300,14 @@ class WebRtcService {
     await _cleanup();
   }
 
+  /// Cleans up local WebRTC resources WITHOUT writing to Firestore.
+  /// Call this when the remote side already set the call status so we don't
+  /// overwrite 'rejected' with 'ended' (Bug 1 from audit).
+  Future<void> cleanupLocal() async {
+    debugPrint('🧹 [WebRTC] cleanupLocal (no Firestore write)');
+    await _cleanup();
+  }
+
   /// Rejects an incoming call without joining it.
   Future<void> rejectCall(String callId) async {
     debugPrint('🚫 [WebRTC] rejectCall $callId');

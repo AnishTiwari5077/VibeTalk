@@ -47,6 +47,7 @@ class _CallingScreenState extends State<CallingScreen>
   String _statusLabel = '';
   int _callDurationSeconds = 0;
   Timer? _durationTimer;
+  Timer? _autoEndTimer; // Bug 4 fix: cancellable instead of Future.delayed
 
   final _webrtc = WebRtcService.instance;
 
@@ -82,12 +83,15 @@ class _CallingScreenState extends State<CallingScreen>
       if (!mounted) return;
       setState(() {
         _remoteRenderer.srcObject = stream;
-        _remoteConnected = stream != null;
-        if (stream != null) {
+        // Bug 2 fix: only start timer on FIRST non-null emission.
+        // Without this guard, timer resets to 0 if WebRTC re-emits
+        // the stream during renegotiation / network reconnect.
+        if (stream != null && !_remoteConnected) {
           _statusLabel = 'Connected';
           globalCallStateController.updateState(CallState.connected);
           _startTimer();
         }
+        _remoteConnected = stream != null;
       });
     });
 
@@ -114,8 +118,10 @@ class _CallingScreenState extends State<CallingScreen>
     });
 
     // Auto-cancel: if nobody answers in 60 seconds, hang up.
+    // Bug 4 fix: use a Timer field so it can be cancelled properly
+    // and doesn't hold a reference to this for 60 s after dispose.
     if (widget.isCaller) {
-      Future.delayed(const Duration(seconds: 60), () {
+      _autoEndTimer = Timer(const Duration(seconds: 60), () {
         if (mounted && !_isEnding && !_remoteConnected) {
           debugPrint('⏰ [CallingScreen] Auto-cancel: no answer after 60s');
           _endCallAndPop();
@@ -168,8 +174,9 @@ class _CallingScreenState extends State<CallingScreen>
     _isEnding = true;
 
     // Cancel all subscriptions FIRST so null-stream callbacks
-    // don’t blank the screen while we’re still navigating away.
+    // don't blank the screen while we're still navigating away.
     _durationTimer?.cancel();
+    _autoEndTimer?.cancel(); // Bug 4 fix: cancel the auto-end timer
     await _localStreamSub?.cancel();
     await _remoteStreamSub?.cancel();
     await _statusSub?.cancel();
@@ -182,8 +189,10 @@ class _CallingScreenState extends State<CallingScreen>
     if (!fromRemote) {
       await _webrtc.endCall(widget.call.callId);
     } else {
-      // Caller already ended — still clean up our local WebRTC resources
-      await WebRtcService.instance.endCall(widget.call.callId);
+      // Bug 1 fix: remote already wrote to Firestore (status: ended/rejected).
+      // Only clean up local WebRTC resources — do NOT overwrite the status,
+      // which would turn 'rejected' into 'ended' and corrupt call history.
+      await _webrtc.cleanupLocal();
     }
 
     globalCallStateController.updateState(CallState.ended);
@@ -193,6 +202,7 @@ class _CallingScreenState extends State<CallingScreen>
   @override
   void dispose() {
     _durationTimer?.cancel();
+    _autoEndTimer?.cancel(); // Bug 4 fix
     _localStreamSub?.cancel();
     _remoteStreamSub?.cancel();
     _statusSub?.cancel();
@@ -208,26 +218,85 @@ class _CallingScreenState extends State<CallingScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          // ── Background / Remote video ──────────────────────────────────
-          _buildRemoteView(),
+    return PopScope(
+      // Prevent the route from popping without user confirmation.
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return; // already popped (shouldn't happen when canPop=false)
+        await _onBackPressed();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            // ── Background / Remote video ──────────────────────────────────
+            _buildRemoteView(),
 
-          // ── Local preview (picture-in-picture) ────────────────────────
-          if (widget.call.isVideo && _localRenderer.srcObject != null)
-            _buildLocalPreview(),
+            // ── Local preview (picture-in-picture) ────────────────────────
+            if (widget.call.isVideo && _localRenderer.srcObject != null)
+              _buildLocalPreview(),
 
-          // ── Top bar: name + status ─────────────────────────────────────
-          _buildTopBar(),
+            // ── Top bar: name + status ─────────────────────────────────────
+            _buildTopBar(),
 
-          // ── Bottom controls ────────────────────────────────────────────
-          _buildControls(),
-        ],
+            // ── Bottom controls ────────────────────────────────────────────
+            _buildControls(),
+          ],
+        ),
       ),
     );
   }
+
+  /// Called when the hardware/gesture back button is pressed.
+  /// Shows a quick dialog so the user can choose between going back
+  /// (call stays active) or explicitly ending the call.
+  Future<void> _onBackPressed() async {
+    if (_isEnding) return; // already ending — nothing to intercept
+
+    final shouldEnd = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.call_end_rounded, color: Colors.redAccent, size: 24),
+            SizedBox(width: 10),
+            Text('End Call?', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: const Text(
+          'Do you want to end the call?',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text(
+              'Stay',
+              style: TextStyle(color: Colors.white70, fontSize: 15),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('End Call', style: TextStyle(fontSize: 15)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldEnd == true && mounted) {
+      _endCallAndPop();
+    }
+  } // end _onBackPressed
 
   Widget _buildRemoteView() {
     if (widget.call.isVideo && _remoteConnected) {
