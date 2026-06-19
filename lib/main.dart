@@ -132,6 +132,11 @@ class MyApp extends ConsumerStatefulWidget {
 class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+  // Deduplication: track the last handled call action to avoid processing
+  // the same notification twice (FCM can deliver duplicates; the pendingCall
+  // path and the callback path can both fire for the same accept_call).
+  String? _lastHandledCallKey;
+
   @override
   void initState() {
     super.initState();
@@ -220,6 +225,19 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
 
   // ── Call notification tap (app killed/background) ─────────────────────────
   void _handleCallNotificationTap(String callId, {String? actionId}) async {
+    // Deduplicate — ignore if we already handled this exact call+action
+    // within the last 5 seconds.
+    final key = '$callId:$actionId';
+    if (_lastHandledCallKey == key) {
+      debugPrint('🔄 [CallNotif] Duplicate ignored: $key');
+      return;
+    }
+    _lastHandledCallKey = key;
+    Future.delayed(
+      const Duration(seconds: 5),
+      () => _lastHandledCallKey = null,
+    );
+
     debugPrint('📞 Call notification — callId: $callId, action: $actionId');
 
     // Set suppression SYNCHRONOUSLY before any async work.

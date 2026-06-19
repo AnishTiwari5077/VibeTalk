@@ -13,9 +13,11 @@
 //   /calls/{callId}/calleeCandidates
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:http/http.dart' as http;
 import 'package:vibetalk/models/call_model.dart';
 
 class WebRtcService {
@@ -43,19 +45,47 @@ class WebRtcService {
   StreamSubscription? _answerSub;
   StreamSubscription? _remoteIceSub;
 
+  // Bug fix: buffer ICE candidates that arrive before setRemoteDescription
+  final List<RTCIceCandidate> _pendingCandidates = [];
+  bool _remoteDescriptionSet = false;
+
   bool _isMuted = false;
   bool _isSpeakerOn = false;
   bool _isCameraOff = false;
   bool _isFrontCamera = true;
+  // Guard: prevents createCall/joinCall being called while already in progress
+  // (happens when the same notification is processed twice).
+  bool _isCallInProgress = false;
 
-  // ─── Free STUN servers ───────────────────────────────────────────────────
-  static const _iceServers = {
+  // ─── ICE server fallback (used only if API fetch fails) ─────────────────
+  static const _fallbackIceServers = {
     'iceServers': [
       {'urls': 'stun:stun.l.google.com:19302'},
       {'urls': 'stun:stun1.l.google.com:19302'},
-      {'urls': 'stun:stun2.l.google.com:19302'},
     ],
   };
+
+  /// Fetches fresh, time-limited TURN credentials from Metered.ca REST API.
+  /// Falls back to STUN-only if the network request fails.
+  static Future<Map<String, dynamic>> _fetchIceServers() async {
+    const apiKey = '8bf8c611614a7e8c7b77c991e03524cf22b8';
+    const url =
+        'https://chartapp.metered.live/api/v1/turn/credentials?apiKey=$apiKey';
+    try {
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final List<dynamic> servers = jsonDecode(response.body) as List<dynamic>;
+        debugPrint('🌐 [WebRTC] Fetched ${servers.length} ICE servers from Metered.ca');
+        return {'iceServers': servers};
+      }
+      debugPrint('⚠️ [WebRTC] Metered API returned ${response.statusCode} — using fallback');
+    } catch (e) {
+      debugPrint('⚠️ [WebRTC] Could not fetch TURN credentials: $e — using fallback');
+    }
+    return _fallbackIceServers;
+  }
 
   static const _sdpConstraints = {
     'mandatory': {
@@ -76,9 +106,15 @@ class WebRtcService {
     required bool isVideo,
   }) async {
     debugPrint('🔧 [WebRTC] createCall callId=$callId isVideo=$isVideo');
+    if (_isCallInProgress) {
+      debugPrint('⚠️ [WebRTC] createCall ignored — call already in progress');
+      return;
+    }
+    _isCallInProgress = true;
 
     await _openUserMedia(isVideo: isVideo);
-    await _createPeerConnection();
+    final iceServers = await _fetchIceServers();
+    await _createPeerConnection(iceServers);
 
     // Collect ICE candidates and write them to Firestore
     _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
@@ -90,12 +126,18 @@ class WebRtcService {
           .add(candidate.toMap());
     };
 
-    // Create offer
-    final offer = await _peerConnection!.createOffer(_sdpConstraints);
+    // Create offer — modify SDP BEFORE setLocalDescription to avoid mismatch
+    final rawOffer = await _peerConnection!.createOffer(_sdpConstraints);
+    final optimizedOfferSdp = _optimizeSdpBitrate(
+      rawOffer.sdp!,
+      targetBitrateKbps: isVideo ? 2500 : 128,
+      isVideo: isVideo,
+    );
+    final offer = RTCSessionDescription(optimizedOfferSdp, rawOffer.type);
     await _peerConnection!.setLocalDescription(offer);
-    debugPrint('📤 [WebRTC] Offer created');
+    debugPrint('📤 [WebRTC] Offer created (${isVideo ? "2500 kbps video" : "128 kbps audio"})');
 
-    // Write offer to Firestore (status already set by ConversationController)
+    // Write offer to Firestore
     await FirebaseFirestore.instance.collection('calls').doc(callId).update({
       'offer': {'type': offer.type, 'sdp': offer.sdp},
     });
@@ -125,6 +167,13 @@ class WebRtcService {
             answerData['type'] as String,
           );
           await _peerConnection!.setRemoteDescription(answer);
+          // Flush any ICE candidates that arrived before answer
+          _remoteDescriptionSet = true;
+          for (final c in _pendingCandidates) {
+            await _peerConnection?.addCandidate(c);
+            debugPrint('🧊 [WebRTC] Flushed buffered ICE candidate (caller)');
+          }
+          _pendingCandidates.clear();
           _callStatusController.add('accepted');
         }
       }
@@ -140,9 +189,15 @@ class WebRtcService {
     required bool isVideo,
   }) async {
     debugPrint('🔧 [WebRTC] joinCall callId=$callId isVideo=$isVideo');
+    if (_isCallInProgress) {
+      debugPrint('⚠️ [WebRTC] joinCall ignored — call already in progress');
+      return;
+    }
+    _isCallInProgress = true;
 
     await _openUserMedia(isVideo: isVideo);
-    await _createPeerConnection();
+    final iceServers = await _fetchIceServers();
+    await _createPeerConnection(iceServers);
 
     _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
       debugPrint('🧊 [WebRTC] Callee ICE: ${candidate.candidate}');
@@ -153,16 +208,38 @@ class WebRtcService {
           .add(candidate.toMap());
     };
 
-    // Read the offer
-    final callSnap = await FirebaseFirestore.instance
+    // Wait for offer to appear (up to 15 s) — fixes the race condition where
+    // the callee's screen opens before the caller has written the offer to
+    // Firestore (which happens asynchronously after the call document is created).
+    debugPrint('⏳ [WebRTC] Waiting for offer in Firestore...');
+    final offerCompleter = Completer<Map<String, dynamic>>();
+    StreamSubscription? offerSub;
+    offerSub = FirebaseFirestore.instance
         .collection('calls')
         .doc(callId)
-        .get();
-    final callData = callSnap.data();
-    if (callData == null) throw Exception('Call document not found');
+        .snapshots()
+        .listen((snap) {
+      final data = snap.data();
+      if (data != null && data['offer'] != null && !offerCompleter.isCompleted) {
+        offerSub?.cancel();
+        offerCompleter.complete(data['offer'] as Map<String, dynamic>);
+      }
+    });
 
-    final offerData = callData['offer'] as Map<String, dynamic>?;
-    if (offerData == null) throw Exception('No offer in call document');
+    late Map<String, dynamic> offerData;
+    try {
+      offerData = await offerCompleter.future.timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          offerSub?.cancel();
+          throw Exception('Timed out waiting for offer after 15 s');
+        },
+      );
+    } catch (e) {
+      offerSub?.cancel();
+      rethrow;
+    }
+    debugPrint('✅ [WebRTC] Offer received from Firestore');
 
     final offer = RTCSessionDescription(
       offerData['sdp'] as String,
@@ -170,16 +247,30 @@ class WebRtcService {
     );
     await _peerConnection!.setRemoteDescription(offer);
 
-    // Create answer
-    final answer = await _peerConnection!.createAnswer(_sdpConstraints);
+    // Create answer — modify SDP BEFORE setLocalDescription to avoid mismatch
+    final rawAnswer = await _peerConnection!.createAnswer(_sdpConstraints);
+    final optimizedAnswerSdp = _optimizeSdpBitrate(
+      rawAnswer.sdp!,
+      targetBitrateKbps: isVideo ? 2500 : 128,
+      isVideo: isVideo,
+    );
+    final answer = RTCSessionDescription(optimizedAnswerSdp, rawAnswer.type);
     await _peerConnection!.setLocalDescription(answer);
+    debugPrint('📤 [WebRTC] Answer sent (${isVideo ? "2500 kbps video" : "128 kbps audio"})');
+
+    // Mark remote description as set and flush any buffered ICE candidates
+    _remoteDescriptionSet = true;
+    for (final c in _pendingCandidates) {
+      await _peerConnection?.addCandidate(c);
+      debugPrint('🧊 [WebRTC] Flushed buffered ICE candidate');
+    }
+    _pendingCandidates.clear();
 
     // Write answer + update status
     await FirebaseFirestore.instance.collection('calls').doc(callId).update({
       'answer': {'type': answer.type, 'sdp': answer.sdp},
       'status': 'accepted',
     });
-    debugPrint('📤 [WebRTC] Answer sent');
 
     _callStatusController.add('accepted');
 
@@ -255,9 +346,21 @@ class WebRtcService {
 
   Future<void> _openUserMedia({required bool isVideo}) async {
     final constraints = <String, dynamic>{
-      'audio': true,
+      // Optimized audio: noise suppression + echo cancellation
+      'audio': {
+        'echoCancellation': true,
+        'noiseSuppression': true,
+        'autoGainControl': true,
+      },
+      // Use 'ideal' (not 'mandatory') so getUserMedia gracefully falls back
+      // on devices that don't support 720p instead of throwing an error.
       'video': isVideo
-          ? {'facingMode': 'user', 'width': 640, 'height': 480}
+          ? {
+              'facingMode': 'user',
+              'width':  {'ideal': 1280},
+              'height': {'ideal': 720},
+              'frameRate': {'ideal': 30, 'max': 30},
+            }
           : false,
     };
 
@@ -268,8 +371,21 @@ class WebRtcService {
         '📷 [WebRTC] Local stream opened. Video tracks: ${stream.getVideoTracks().length}');
   }
 
-  Future<void> _createPeerConnection() async {
-    _peerConnection = await createPeerConnection(_iceServers);
+  /// Injects a bandwidth limit into the SDP to prevent WebRTC from
+  /// over-compressing the stream on mobile networks.
+  /// [targetBitrateKbps] — 2500 for video calls, 128 for audio-only.
+  String _optimizeSdpBitrate(String sdp, {required int targetBitrateKbps, bool isVideo = true}) {
+    final lines = sdp.split('\r\n');
+    final marker = isVideo ? 'm=video' : 'm=audio';
+    final idx = lines.indexWhere((l) => l.startsWith(marker));
+    if (idx != -1) {
+      lines.insert(idx + 1, 'b=AS:$targetBitrateKbps');
+    }
+    return lines.join('\r\n');
+  }
+
+  Future<void> _createPeerConnection(Map<String, dynamic> iceServers) async {
+    _peerConnection = await createPeerConnection(iceServers);
     debugPrint('🔗 [WebRTC] PeerConnection created');
 
     // Add local tracks to the connection
@@ -316,8 +432,15 @@ class WebRtcService {
               data['sdpMid'] as String,
               data['sdpMLineIndex'] as int,
             );
-            _peerConnection?.addCandidate(candidate);
-            debugPrint('🧊 [WebRTC] Added remote ICE candidate');
+            // Buffer candidates until remoteDescription is set — adding them
+            // before setRemoteDescription silently drops them and breaks ICE.
+            if (_remoteDescriptionSet) {
+              _peerConnection?.addCandidate(candidate);
+              debugPrint('🧊 [WebRTC] Added remote ICE candidate');
+            } else {
+              _pendingCandidates.add(candidate);
+              debugPrint('🧊 [WebRTC] Buffered ICE candidate (remote desc not set yet)');
+            }
           }
         }
       }
@@ -329,6 +452,10 @@ class WebRtcService {
     await _remoteIceSub?.cancel();
     _answerSub = null;
     _remoteIceSub = null;
+
+    _pendingCandidates.clear();
+    _remoteDescriptionSet = false;
+    _isCallInProgress = false;
 
     await _localStream?.dispose();
     await _remoteStream?.dispose();
