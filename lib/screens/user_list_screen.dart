@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vibetalk/core/error_handler.dart';
+import 'package:vibetalk/models/user_model.dart';
+import 'package:vibetalk/providers/auth_provider.dart';
 import 'package:vibetalk/providers/chart_provider.dart';
 import 'package:vibetalk/providers/friend_req_provider.dart';
+import 'package:vibetalk/screens/Conservation/conversation_screen.dart';
 import 'package:vibetalk/widgets/empty_state.dart';
 import 'package:vibetalk/widgets/user_avatar.dart';
 
@@ -19,6 +22,7 @@ class UsersListScreen extends ConsumerStatefulWidget {
 
 class _UsersListScreenState extends ConsumerState<UsersListScreen> {
   final _searchController = TextEditingController();
+  bool _isNavigating = false; // prevents double-tap opening two conversations
 
   @override
   void dispose() {
@@ -72,6 +76,64 @@ class _UsersListScreenState extends ConsumerState<UsersListScreen> {
           ErrorHandler.getErrorMessage(e),
         );
       }
+    }
+  }
+
+  /// Opens an existing conversation or creates a new one if the chat document
+  /// was deleted. This is the entry point when a friend taps "Message".
+  Future<void> _openConversation(String userId, String username) async {
+    // Guard against double-tap pushing two routes.
+    if (_isNavigating) return;
+    _isNavigating = true;
+
+    try {
+      final currentUserId = ref.read(currentUserProvider).value?.uid ?? '';
+
+      // Compute chatId locally — same algorithm as ChatService.generateChatId.
+      // This avoids any Firestore round-trip, so navigation is instant.
+      final chatId = currentUserId.compareTo(userId) <= 0
+          ? '${currentUserId}_$userId'
+          : '${userId}_$currentUserId';
+
+      // Get fresh user data from the already-loaded list (no network).
+      final users = ref.read(filteredUsersProvider).value ?? [];
+      final friend = users.firstWhere(
+        (u) => u.uid == userId,
+        orElse: () => UserModel(
+          uid: userId,
+          username: username,
+          email: '',
+          fcmToken: '',
+          createdAt: DateTime.now(),
+          searchKeywords: [],
+        ),
+      );
+
+      // Navigate immediately — zero delay.
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ConversationScreen(chatId: chatId, friend: friend),
+        ),
+      );
+
+      // After returning from the screen, ensure the chat document exists.
+      // Only does real work when BOTH users previously deleted the conversation;
+      // for normal friends the doc is already there so this is a cheap GET.
+      if (mounted) {
+        ref
+            .read(chatServiceProvider)
+            .getOrCreateChat(userId)
+            .catchError((_) => ''); // background; errors silently ignored
+      }
+    } catch (e) {
+      if (mounted) {
+        ErrorHandler.showErrorSnackBar(
+          context,
+          ErrorHandler.getErrorMessage(e),
+        );
+      }
+    } finally {
+      if (mounted) _isNavigating = false;
     }
   }
 
@@ -210,7 +272,9 @@ class _UsersListScreenState extends ConsumerState<UsersListScreen> {
   Widget build(BuildContext context) {
     final usersAsync = ref.watch(filteredUsersProvider);
     final sentRequests = ref.watch(sentRequestsProvider).value ?? [];
-    final chats = ref.watch(chatListProvider).value ?? [];
+    // Use accepted friend requests — not chats — to determine isFriend.
+    // This stays TRUE even when both users delete the conversation.
+    final acceptedFriends = ref.watch(acceptedFriendsProvider).value ?? {};
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
@@ -307,15 +371,17 @@ class _UsersListScreenState extends ConsumerState<UsersListScreen> {
                         (req) => req.receiverId == user.uid,
                       );
 
-                      // Check if already friends (chat exists)
-                      final isFriend = chats.any(
-                        (chat) => chat.participants.contains(user.uid),
-                      );
+                      // isFriend is based on accepted friend requests,
+                      // NOT on chat existence. Fixes the "no way to message
+                      // after deleting conversation" bug.
+                      final isFriend = acceptedFriends.contains(user.uid);
 
                       return Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: isFriend || requestSent
+                          onTap: isFriend
+                              ? () => _openConversation(user.uid, user.username)
+                              : requestSent
                               ? null
                               : () => _sendFriendRequest(user.uid),
                           child: Container(
@@ -481,11 +547,33 @@ class _UsersListScreenState extends ConsumerState<UsersListScreen> {
     if (isFriend) {
       return PopupMenuButton<String>(
         onSelected: (value) {
-          if (value == 'unfriend') {
+          if (value == 'message') {
+            _openConversation(userId, username);
+          } else if (value == 'unfriend') {
             _unfriend(userId, username);
           }
         },
         itemBuilder: (context) => [
+          PopupMenuItem(
+            value: 'message',
+            child: Row(
+              children: [
+                Icon(
+                  Icons.chat_bubble_outline,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Message',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const PopupMenuDivider(),
           PopupMenuItem(
             value: 'unfriend',
             child: Row(

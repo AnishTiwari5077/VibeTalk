@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:vibetalk/services/notification_services.dart';
@@ -64,15 +66,14 @@ class FriendRequestService {
       final chatId = _generateChatId(currentUser.uid, senderId);
 
       // Fetch sender data — needed for both participantsData and the notification.
-      final senderDoc = await _firestore.collection('users').doc(senderId).get();
-      final senderData = senderDoc.exists
-          ? UserModel.fromMap(senderDoc.data()!)
-          : null;
+      final senderDoc =
+          await _firestore.collection('users').doc(senderId).get();
+      final senderData =
+          senderDoc.exists ? UserModel.fromMap(senderDoc.data()!) : null;
 
       await _firestore.collection('chats').doc(chatId).set({
         'chatId': chatId,
         'participants': [currentUser.uid, senderId],
-        // participantsData prevents a per-render fallback fetch in ChatListScreen.
         'participantsData': {
           currentUser.uid: {
             'username': currentUser.username,
@@ -118,8 +119,6 @@ class FriendRequestService {
       final chatId = _generateChatId(currentUser.uid, friendId);
 
       // 1. Delete messages subcollection FIRST (before parent doc).
-      //    Firestore subcollections survive parent deletion, so reversing the
-      //    order would leave orphaned messages if the batch below fails.
       final messagesSnapshot = await _firestore
           .collection('chats')
           .doc(chatId)
@@ -151,22 +150,29 @@ class FriendRequestService {
 
       final requestBatch = _firestore.batch();
       for (var doc in results[0].docs) {
-        if (doc.data()['receiverId'] == friendId) requestBatch.delete(doc.reference);
+        if (doc.data()['receiverId'] == friendId) {
+          requestBatch.delete(doc.reference);
+        }
       }
       for (var doc in results[1].docs) {
-        if (doc.data()['receiverId'] == currentUser.uid) requestBatch.delete(doc.reference);
+        if (doc.data()['receiverId'] == currentUser.uid) {
+          requestBatch.delete(doc.reference);
+        }
       }
       await requestBatch.commit();
-
     } catch (e) {
       rethrow;
     }
   }
 
   String _generateChatId(String uid1, String uid2) {
-    return uid1.hashCode <= uid2.hashCode ? '${uid1}_$uid2' : '${uid2}_$uid1';
+    return uid1.hashCode <= uid2.hashCode
+        ? '${uid1}_$uid2'
+        : '${uid2}_$uid1';
   }
 }
+
+// ── Stream providers ────────────────────────────────────────────────────────
 
 final receivedRequestsProvider = StreamProvider<List<FriendRequest>>((
   ref,
@@ -178,27 +184,21 @@ final receivedRequestsProvider = StreamProvider<List<FriendRequest>>((
   }
 
   try {
-    await for (final snapshot
-        in FirebaseFirestore.instance
-            .collection('friendRequests')
-            .where('receiverId', isEqualTo: currentUser.uid)
-            .where('status', isEqualTo: 'pending')
-            .snapshots()) {
-      // Check if user is still authenticated
+    await for (final snapshot in FirebaseFirestore.instance
+        .collection('friendRequests')
+        .where('receiverId', isEqualTo: currentUser.uid)
+        .where('status', isEqualTo: 'pending')
+        .snapshots()) {
       final stillAuthenticated = ref.read(currentUserProvider).value;
       if (stillAuthenticated == null) {
         yield [];
         return;
       }
-
-      final requests = snapshot.docs
+      yield snapshot.docs
           .map((doc) => FriendRequest.fromMap(doc.data()))
           .toList();
-
-      yield requests;
     }
   } catch (e) {
-    // Handle permission errors gracefully
     yield [];
   }
 });
@@ -211,27 +211,81 @@ final sentRequestsProvider = StreamProvider<List<FriendRequest>>((ref) async* {
   }
 
   try {
-    await for (final snapshot
-        in FirebaseFirestore.instance
-            .collection('friendRequests')
-            .where('senderId', isEqualTo: currentUser.uid)
-            .where('status', isEqualTo: 'pending')
-            .snapshots()) {
-      // Check if user is still authenticated
+    await for (final snapshot in FirebaseFirestore.instance
+        .collection('friendRequests')
+        .where('senderId', isEqualTo: currentUser.uid)
+        .where('status', isEqualTo: 'pending')
+        .snapshots()) {
       final stillAuthenticated = ref.read(currentUserProvider).value;
       if (stillAuthenticated == null) {
         yield [];
         return;
       }
-
-      final requests = snapshot.docs
+      yield snapshot.docs
           .map((doc) => FriendRequest.fromMap(doc.data()))
           .toList();
-
-      yield requests;
     }
   } catch (e) {
-    // Handle permission errors gracefully
     yield [];
   }
+});
+
+/// Streams the set of UIDs that are accepted friends of the current user.
+/// Combines BOTH directions (I sent → accepted, they sent → I accepted) using
+/// a StreamController so [isFriend] stays TRUE even when the chat is deleted.
+final acceptedFriendsProvider = StreamProvider<Set<String>>((ref) {
+  final currentUser = ref.watch(currentUserProvider).value;
+  if (currentUser == null) return Stream.value({});
+
+  final firestore = FirebaseFirestore.instance;
+  final controller = StreamController<Set<String>>();
+
+  final fromSent = <String>{};
+  final fromReceived = <String>{};
+
+  void emit() {
+    if (!controller.isClosed) {
+      controller.add({...fromSent, ...fromReceived});
+    }
+  }
+
+  // Stream 1: requests I sent that were accepted
+  final sub1 = firestore
+      .collection('friendRequests')
+      .where('senderId', isEqualTo: currentUser.uid)
+      .where('status', isEqualTo: 'accepted')
+      .snapshots()
+      .listen(
+    (snap) {
+      fromSent
+        ..clear()
+        ..addAll(snap.docs.map((d) => d.data()['receiverId'] as String));
+      emit();
+    },
+    onError: (_) => emit(),
+  );
+
+  // Stream 2: requests sent to me that I accepted
+  final sub2 = firestore
+      .collection('friendRequests')
+      .where('receiverId', isEqualTo: currentUser.uid)
+      .where('status', isEqualTo: 'accepted')
+      .snapshots()
+      .listen(
+    (snap) {
+      fromReceived
+        ..clear()
+        ..addAll(snap.docs.map((d) => d.data()['senderId'] as String));
+      emit();
+    },
+    onError: (_) => emit(),
+  );
+
+  ref.onDispose(() {
+    sub1.cancel();
+    sub2.cancel();
+    controller.close();
+  });
+
+  return controller.stream;
 });
