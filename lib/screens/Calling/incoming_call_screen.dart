@@ -35,6 +35,10 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
   late Animation<double> _pulseAnim;
   StreamSubscription? _callDocSub;
 
+  /// Guards against: (1) double-tap on Accept/Decline, (2) _callDocSub
+  /// firing and popping CallingScreen while _accept() is mid-navigation.
+  bool _isNavigating = false;
+
   // Looping ringtone — plays until the user accepts, declines, or caller hangs up.
   final AudioPlayer _ringtone = AudioPlayer();
 
@@ -51,12 +55,15 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
       CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
     );
 
-    // Auto-dismiss if the caller cancels
+    // Auto-dismiss if the caller cancels or call is rejected.
+    // _isNavigating guard prevents this from popping CallingScreen after
+    // _accept() has already pushed it (Bug 1 fix).
     _callDocSub = WebRtcService.watchCall(widget.call.callId).listen((call) {
-      if (!mounted) return;
+      if (!mounted || _isNavigating) return;
       if (call == null ||
           call.status == 'ended' ||
           call.status == 'rejected') {
+        _isNavigating = true;
         _stopRingtone();
         Navigator.of(context).pop();
       }
@@ -75,10 +82,21 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
   Future<void> _startRingtone() async {
     try {
       await _ringtone.setReleaseMode(ReleaseMode.loop);
-      await _ringtone.play(
-        DeviceFileSource('content://settings/system/ringtone'),
-      );
+      // Bug 2 fix: content:// URIs are Android-only.
+      // On iOS they throw; on Android 13+ they may need permissions.
+      // Use a platform check + bundled-asset fallback.
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        await _ringtone.play(
+          DeviceFileSource('content://settings/system/ringtone'),
+        );
+      } else {
+        await _ringtone.play(AssetSource('audio/ringtone.mp3'));
+      }
     } catch (e) {
+      // Fallback: bundled asset when the system ringtone is unavailable.
+      try {
+        await _ringtone.play(AssetSource('audio/ringtone.mp3'));
+      } catch (_) {}
       if (kDebugMode) debugPrint('⚠️ Ringtone error: $e');
     }
   }
@@ -98,8 +116,14 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
   }
 
   Future<void> _accept() async {
-    await _stopRingtone();
+    // Bug 1 + Bug 3 fix: guard against double-tap and against _callDocSub
+    // popping CallingScreen after we've already pushed it.
+    if (_isNavigating) return;
+    _isNavigating = true;
+    // Cancel subscription BEFORE any await so it can't fire during the
+    // async gap between _stopRingtone() and pushReplacement().
     _callDocSub?.cancel();
+    await _stopRingtone();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
@@ -109,8 +133,12 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
   }
 
   Future<void> _reject() async {
-    await _stopRingtone();
+    if (_isNavigating) return;
+    _isNavigating = true;
+    // Cancel FIRST so the listener doesn't try to pop() again when
+    // rejectCall() sets status: 'rejected' in Firestore.
     _callDocSub?.cancel();
+    await _stopRingtone();
     await WebRtcService.instance.rejectCall(widget.call.callId);
     if (mounted) Navigator.of(context).pop();
   }
@@ -121,7 +149,9 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
     final isVideo = widget.call.isVideo;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      // Minor fix: solid color matching top gradient stop avoids black flash
+      // on route entry with hardware acceleration.
+      backgroundColor: const Color(0xFF0f0c29),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -174,38 +204,41 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
                     ),
                     const SizedBox(height: 40),
 
-                    // Pulsing avatar
+                    // Pulsing avatar — RepaintBoundary isolates the expensive
+                    // boxShadow rasterization so it only repaints this subtree.
                     ScaleTransition(
                       scale: _pulseAnim,
-                      child: Container(
-                        width: 140,
-                        height: 140,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                            colors: [
-                              AppTheme.primaryLight,
-                              AppTheme.primaryLight.withValues(alpha: 0.4),
+                      child: RepaintBoundary(
+                        child: Container(
+                          width: 140,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: [
+                                AppTheme.primaryLight,
+                                AppTheme.primaryLight.withValues(alpha: 0.4),
+                              ],
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppTheme.primaryLight
+                                    .withValues(alpha: 0.5),
+                                blurRadius: 40,
+                                spreadRadius: 10,
+                              ),
                             ],
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppTheme.primaryLight
-                                  .withValues(alpha: 0.5),
-                              blurRadius: 40,
-                              spreadRadius: 10,
-                            ),
-                          ],
-                        ),
-                        child: Center(
-                          child: Text(
-                            callerName.isNotEmpty
-                                ? callerName[0].toUpperCase()
-                                : '?',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 60,
-                              fontWeight: FontWeight.w600,
+                          child: Center(
+                            child: Text(
+                              callerName.isNotEmpty
+                                  ? callerName[0].toUpperCase()
+                                  : '?',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 60,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ),
