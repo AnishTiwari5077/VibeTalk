@@ -55,14 +55,18 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
       CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
     );
 
-    // Auto-dismiss if the caller cancels or call is rejected.
+    // Auto-dismiss if the caller cancels or the call is rejected.
     // _isNavigating guard prevents this from popping CallingScreen after
     // _accept() has already pushed it (Bug 1 fix).
+    //
+    // NOTE: we do NOT check `call == null` here. Firestore fires the first
+    // snapshot before the document is loaded (null), which would set
+    // _isNavigating=true and pop the screen before the user can tap.
+    // endCall() always writes status:'ended' — it never deletes the doc —
+    // so null is never a valid "caller hung up" signal in this app.
     _callDocSub = WebRtcService.watchCall(widget.call.callId).listen((call) {
       if (!mounted || _isNavigating) return;
-      if (call == null ||
-          call.status == 'ended' ||
-          call.status == 'rejected') {
+      if (call?.status == 'ended' || call?.status == 'rejected') {
         _isNavigating = true;
         _stopRingtone();
         Navigator.of(context).pop();
