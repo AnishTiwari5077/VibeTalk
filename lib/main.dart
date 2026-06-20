@@ -103,9 +103,14 @@ void main() async {
     }
   }
 
-  runApp(ProviderScope(
-    child: MyApp(pendingCall: pendingCall, pendingCallModel: pendingCallModel),
-  ));
+  runApp(
+    ProviderScope(
+      child: MyApp(
+        pendingCall: pendingCall,
+        pendingCallModel: pendingCallModel,
+      ),
+    ),
+  );
 
   // Warm-up FCM token in background — don't block runApp
   _ensureFcmTokenReady();
@@ -162,19 +167,27 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
             // Call model already fetched in main() — navigate instantly.
             final ctx = navigatorKey.currentContext;
             if (ctx != null && ctx.mounted) {
-              Navigator.of(ctx).push(
-                MaterialPageRoute(
-                  builder: (_) =>
-                      CallingScreen(call: preloadedCall, isCaller: false),
-                ),
-              ).then((_) => NotificationService.clearSuppressedCall());
+              Navigator.of(ctx)
+                  .push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          CallingScreen(call: preloadedCall, isCaller: false),
+                    ),
+                  )
+                  .then((_) => NotificationService.clearSuppressedCall());
             }
           } else {
             // Fallback: fetch from Firestore (slower path).
-            _handleCallNotificationTap(pending.callId, actionId: pending.actionId);
+            _handleCallNotificationTap(
+              pending.callId,
+              actionId: pending.actionId,
+            );
           }
         } else {
-          _handleCallNotificationTap(pending.callId, actionId: pending.actionId);
+          _handleCallNotificationTap(
+            pending.callId,
+            actionId: pending.actionId,
+          );
         }
       } else {
         // Normal launch — check for edge-case notification launches
@@ -274,11 +287,13 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
 
       if (actionId == 'accept_call') {
         // User tapped ✅ Accept on notification shade — skip IncomingCallScreen.
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => CallingScreen(call: call, isCaller: false),
-          ),
-        ).then((_) => NotificationService.clearSuppressedCall());
+        Navigator.of(context)
+            .push(
+              MaterialPageRoute(
+                builder: (_) => CallingScreen(call: call, isCaller: false),
+              ),
+            )
+            .then((_) => NotificationService.clearSuppressedCall());
       } else {
         // Regular tap — show IncomingCallScreen normally.
         Navigator.of(context).push(

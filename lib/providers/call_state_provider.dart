@@ -1,14 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-enum CallState {
-  idle,
-  calling,
-  ringing,
-  connected,
-  ended,
-  rejected,
-  timeout,
-}
+enum CallState { idle, calling, ringing, connected, ended, rejected, timeout }
 
 // A globally accessible controller that WebRtcService can use to update state.
 class CallStateController extends ValueNotifier<CallState> {

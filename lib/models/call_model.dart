@@ -9,6 +9,9 @@ class CallModel {
   final String calleeName;
   final bool isVideo;
   // 'ringing' | 'accepted' | 'rejected' | 'ended'
+  // Note: receiverOnline (bool) is a separate Firestore field written by
+  // IncomingCallScreen — it is NOT stored in CallModel; CallingScreen reads
+  // it directly from the raw snapshot to switch 'Calling...' → 'Ringing...'.
   final String status;
   final Map<String, dynamic>? offer;
   final Map<String, dynamic>? answer;

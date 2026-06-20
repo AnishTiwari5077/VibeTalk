@@ -17,11 +17,7 @@ class CallingScreen extends StatefulWidget {
   final CallModel call;
   final bool isCaller;
 
-  const CallingScreen({
-    super.key,
-    required this.call,
-    required this.isCaller,
-  });
+  const CallingScreen({super.key, required this.call, required this.isCaller});
 
   @override
   State<CallingScreen> createState() => _CallingScreenState();
@@ -42,7 +38,7 @@ class _CallingScreenState extends State<CallingScreen>
   bool _isCameraOff = false;
   bool _isFrontCamera = true;
   bool _remoteConnected = false;
-  bool _isEnding = false;  // guard: prevents double-pop
+  bool _isEnding = false; // guard: prevents double-pop
 
   String _statusLabel = '';
   int _callDurationSeconds = 0;
@@ -146,9 +142,9 @@ class _CallingScreenState extends State<CallingScreen>
     } catch (e) {
       debugPrint('❌ [CallingScreen] Call init error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Call failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Call failed: $e')));
         Navigator.of(context).pop();
       }
     }
@@ -222,7 +218,8 @@ class _CallingScreenState extends State<CallingScreen>
       // Prevent the route from popping without user confirmation.
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
-        if (didPop) return; // already popped (shouldn't happen when canPop=false)
+        if (didPop)
+          return; // already popped (shouldn't happen when canPop=false)
         await _onBackPressed();
       },
       child: Scaffold(
@@ -374,10 +371,7 @@ class _CallingScreenState extends State<CallingScreen>
               else
                 Text(
                   _formattedDuration,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 16,
-                  ),
+                  style: const TextStyle(color: Colors.white70, fontSize: 16),
                 ),
             ],
           ),
@@ -421,8 +415,10 @@ class _CallingScreenState extends State<CallingScreen>
             children: [
               // Call type chip
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white12,
                   borderRadius: BorderRadius.circular(20),
@@ -441,9 +437,10 @@ class _CallingScreenState extends State<CallingScreen>
                     Text(
                       'VibeTalk',
                       style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                          letterSpacing: 1),
+                        color: Colors.white70,
+                        fontSize: 12,
+                        letterSpacing: 1,
+                      ),
                     ),
                   ],
                 ),
@@ -452,8 +449,10 @@ class _CallingScreenState extends State<CallingScreen>
               // Duration when connected
               if (_remoteConnected && widget.call.isVideo)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black38,
                     borderRadius: BorderRadius.circular(20),
@@ -461,13 +460,18 @@ class _CallingScreenState extends State<CallingScreen>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.fiber_manual_record,
-                          color: Colors.red, size: 10),
+                      const Icon(
+                        Icons.fiber_manual_record,
+                        color: Colors.red,
+                        size: 10,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         _formattedDuration,
                         style: const TextStyle(
-                            color: Colors.white, fontSize: 13),
+                          color: Colors.white,
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                   ),
@@ -610,7 +614,7 @@ class _ControlButton extends StatelessWidget {
                       BoxShadow(
                         color: Colors.white.withValues(alpha: 0.3),
                         blurRadius: 10,
-                      )
+                      ),
                     ]
                   : null,
             ),

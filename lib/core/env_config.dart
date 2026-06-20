@@ -38,8 +38,6 @@ class EnvConfig {
   );
 
   static bool get isConfigured {
-    return cloudinaryCloudName.isNotEmpty &&
-        firebaseProjectId.isNotEmpty;
+    return cloudinaryCloudName.isNotEmpty && firebaseProjectId.isNotEmpty;
   }
 }
-

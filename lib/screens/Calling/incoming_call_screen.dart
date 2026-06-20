@@ -15,6 +15,7 @@ import 'package:vibetalk/theme/app_theme.dart';
 
 class IncomingCallScreen extends StatefulWidget {
   final CallModel call;
+
   /// When true (tapped Accept on notification shade), navigates directly
   /// to CallingScreen without waiting for the user to tap Accept again.
   final bool autoAccept;
@@ -51,9 +52,10 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
 
-    _pulseAnim = Tween<double>(begin: 0.95, end: 1.05).animate(
-      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
-    );
+    _pulseAnim = Tween<double>(
+      begin: 0.95,
+      end: 1.05,
+    ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
 
     // Auto-dismiss if the caller cancels or the call is rejected.
     // _isNavigating guard prevents this from popping CallingScreen after
@@ -177,7 +179,9 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
                     // Call type label
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 6),
+                        horizontal: 16,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white10,
                         borderRadius: BorderRadius.circular(20),
@@ -226,8 +230,9 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: AppTheme.primaryLight
-                                    .withValues(alpha: 0.5),
+                                color: AppTheme.primaryLight.withValues(
+                                  alpha: 0.5,
+                                ),
                                 blurRadius: 40,
                                 spreadRadius: 10,
                               ),

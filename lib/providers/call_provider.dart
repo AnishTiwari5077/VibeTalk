@@ -22,7 +22,9 @@ final incomingCallProvider = StreamProvider<CallModel?>((ref) {
 });
 
 /// Watches a specific active call document by callId.
-final activeCallProvider =
-    StreamProvider.family<CallModel?, String>((ref, callId) {
+final activeCallProvider = StreamProvider.family<CallModel?, String>((
+  ref,
+  callId,
+) {
   return WebRtcService.watchCall(callId);
 });

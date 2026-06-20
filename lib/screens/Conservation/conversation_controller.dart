@@ -361,7 +361,8 @@ class ConversationController {
         fileType: type.toString().split('.').last,
       );
 
-      if (kDebugMode) debugPrint('${type.name} uploaded successfully: $mediaUrl');
+      if (kDebugMode)
+        debugPrint('${type.name} uploaded successfully: $mediaUrl');
 
       final content = type == MessageType.image
           ? 'Image'
@@ -429,8 +430,9 @@ class ConversationController {
       // the conversation screen opened and can be stale. Using stale status
       // would cause the "receiver is in chat" check to fire even after the
       // receiver has left the chat, silently dropping the notification.
-      String? receiverToken =
-          friend.fcmToken.isNotEmpty ? friend.fcmToken : null;
+      String? receiverToken = friend.fcmToken.isNotEmpty
+          ? friend.fcmToken
+          : null;
 
       final receiverDoc = await _firestore
           .collection('users')
@@ -449,8 +451,7 @@ class ConversationController {
 
       // Always use FRESH status — never the stale model snapshot.
       final bool isReceiverOnline = receiverData['isOnline'] == true;
-      final String? receiverChatId =
-          receiverData['typingInChatId'] as String?;
+      final String? receiverChatId = receiverData['typingInChatId'] as String?;
 
       if (receiverToken == null || receiverToken.isEmpty) {
         debugPrint('❌ Receiver has no FCM token');
@@ -462,8 +463,7 @@ class ConversationController {
       );
 
       // Only skip if receiver is actively viewing THIS exact chat right now.
-      final isReceiverInThisChat =
-          isReceiverOnline && receiverChatId == chatId;
+      final isReceiverInThisChat = isReceiverOnline && receiverChatId == chatId;
 
       if (!isReceiverInThisChat) {
         debugPrint('📤 Sending push notification...');
@@ -588,19 +588,20 @@ class ConversationController {
 
     try {
       // 1. Resolve callee FCM token — prefer cached model, fallback to Firestore
-      String? calleeToken =
-          friend.fcmToken.isNotEmpty ? friend.fcmToken : null;
+      String? calleeToken = friend.fcmToken.isNotEmpty ? friend.fcmToken : null;
 
       if (calleeToken == null) {
-        debugPrint('⚠️ [CALL] FCM token not in model — fetching from Firestore');
-        final doc =
-            await _firestore.collection('users').doc(friend.uid).get();
+        debugPrint(
+          '⚠️ [CALL] FCM token not in model — fetching from Firestore',
+        );
+        final doc = await _firestore.collection('users').doc(friend.uid).get();
         calleeToken = doc.data()?['fcmToken'] as String?;
       }
 
       if (calleeToken == null || calleeToken.isEmpty) {
         debugPrint(
-            '⚠️ [CALL] Callee has no FCM token — callee must have app open to receive');
+          '⚠️ [CALL] Callee has no FCM token — callee must have app open to receive',
+        );
       }
 
       // 2. Create Firestore call document
@@ -624,7 +625,8 @@ class ConversationController {
           isVideo: isVideo,
         );
         debugPrint(
-            '$callLabel [CALL] FCM notification ${sent ? "sent ✅" : "failed ❌"}');
+          '$callLabel [CALL] FCM notification ${sent ? "sent ✅" : "failed ❌"}',
+        );
       }
 
       // 4. Navigate caller to CallingScreen
@@ -650,9 +652,9 @@ class ConversationController {
       debugPrint('❌ [CALL] Call error: $e');
       try {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to start call: $e')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Failed to start call: $e')));
         }
       } catch (_) {}
     }
