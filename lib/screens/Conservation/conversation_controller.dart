@@ -625,6 +625,7 @@ class ConversationController {
         callerAvatarUrl: currentUser.avatarUrl,
         calleeId: friend.uid,
         calleeName: friend.username,
+        calleeAvatarUrl: friend.avatarUrl,
         isVideo: isVideo,
       );
 
@@ -652,6 +653,7 @@ class ConversationController {
           callerAvatarUrl: currentUser.avatarUrl,
           calleeId: friend.uid,
           calleeName: friend.username,
+          calleeAvatarUrl: friend.avatarUrl,
           isVideo: isVideo,
           status: 'ringing',
           createdAt: DateTime.now(),

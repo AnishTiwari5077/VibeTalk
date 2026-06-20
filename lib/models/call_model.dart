@@ -10,8 +10,11 @@ class CallModel {
   final bool isVideo;
   // 'ringing' | 'accepted' | 'rejected' | 'ended'
   // Note: receiverOnline (bool) is a separate Firestore field written by
-  // IncomingCallScreen — it is NOT stored in CallModel; CallingScreen reads
-  // it directly from the raw snapshot to switch 'Calling...' → 'Ringing...'.
+  // joinCall() in webrtc_service.dart when the callee accepts the call.
+  // It is NOT stored in CallModel; _answerSub reads it directly from the
+  // raw Firestore snapshot to trigger the 'Calling' → 'Ringing' transition.
+
+  final String? calleeAvatarUrl;
   final String status;
   final Map<String, dynamic>? offer;
   final Map<String, dynamic>? answer;
@@ -24,6 +27,7 @@ class CallModel {
     this.callerAvatarUrl,
     required this.calleeId,
     required this.calleeName,
+    this.calleeAvatarUrl,
     required this.isVideo,
     required this.status,
     this.offer,
@@ -38,6 +42,7 @@ class CallModel {
         'callerAvatarUrl': callerAvatarUrl,
         'calleeId': calleeId,
         'calleeName': calleeName,
+        'calleeAvatarUrl': calleeAvatarUrl,
         'isVideo': isVideo,
         'status': status,
         'offer': offer,
@@ -52,6 +57,7 @@ class CallModel {
         callerAvatarUrl: map['callerAvatarUrl'] as String?,
         calleeId: map['calleeId'] as String? ?? '',
         calleeName: map['calleeName'] as String? ?? '',
+        calleeAvatarUrl: map['calleeAvatarUrl'] as String?,
         isVideo: map['isVideo'] as bool? ?? false,
         status: map['status'] as String? ?? 'ringing',
         offer: map['offer'] as Map<String, dynamic>?,
@@ -69,6 +75,7 @@ class CallModel {
         callerAvatarUrl: callerAvatarUrl,
         calleeId: calleeId,
         calleeName: calleeName,
+        calleeAvatarUrl: calleeAvatarUrl,
         isVideo: isVideo,
         status: status ?? this.status,
         offer: offer,
