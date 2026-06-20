@@ -63,7 +63,7 @@ class _CallingScreenState extends State<CallingScreen>
     await _localRenderer.initialize();
     await _remoteRenderer.initialize();
 
-    _statusLabel = widget.isCaller ? 'Calling...' : 'Connecting...';
+    _statusLabel = widget.isCaller ? 'Calling' : 'Connecting';
     globalCallStateController.updateState(
       widget.isCaller ? CallState.calling : CallState.ringing,
     );
@@ -74,42 +74,72 @@ class _CallingScreenState extends State<CallingScreen>
       setState(() => _localRenderer.srcObject = stream);
     });
 
-    // Wire remote stream → renderer
+    // Wire remote stream → renderer only.
+    // Do NOT start the timer here — onTrack fires at SDP negotiation time,
+    // which is BEFORE ICE connects. Starting the timer here causes the false
+    // "00:02" shown in the black-screen screenshot.
+    // Timer is started in _statusSub when 'connected' fires (true ICE).
     _remoteStreamSub = _webrtc.remoteStream.listen((stream) {
       if (!mounted) return;
       setState(() {
         _remoteRenderer.srcObject = stream;
-        // Bug 2 fix: only start timer on FIRST non-null emission.
-        // Without this guard, timer resets to 0 if WebRTC re-emits
-        // the stream during renegotiation / network reconnect.
-        if (stream != null && !_remoteConnected) {
-          _statusLabel = 'Connected';
-          globalCallStateController.updateState(CallState.connected);
-          _startTimer();
-        }
         _remoteConnected = stream != null;
       });
     });
 
-    // Listen for call status changes (rejected / ended by other side)
+    // Listen for call status changes from WebRTC connection state machine.
     _statusSub = _webrtc.callStatus.listen((status) {
       if (!mounted) return;
-      if (status == 'ended' || status == 'rejected') {
-        _endCallAndPop(fromRemote: true);
-      } else if (status == 'accepted') {
-        setState(() {
-          _statusLabel = 'Connected';
-          globalCallStateController.updateState(CallState.connected);
-        });
+      switch (status) {
+        case 'ended':
+        case 'rejected':
+          _endCallAndPop(fromRemote: true);
+          break;
+
+        // Receiver's device has actually received the call.
+        // Fires when joinCall() writes receiverOnline:true to Firestore.
+        // Works for in-app, background, and killed-state accepts.
+        case 'ringing':
+          setState(() => _statusLabel = 'Ringing');
+          break;
+
+        // FIX 3a: Show reconnecting UI rather than destroying the screen.
+        // The peer connection is still alive — WebRTC will self-heal.
+        case 'reconnecting':
+          setState(() => _statusLabel = 'Reconnecting');
+          break;
+
+        // Answer written to Firestore but ICE not yet established.
+        // Show intermediate label — no timer yet.
+        case 'accepted':
+          setState(() => _statusLabel = 'Connecting');
+          break;
+
+        // RTCPeerConnectionStateConnected — ICE truly established.
+        // This is the ONLY place the timer starts, preventing the false
+        // "00:02" when the remote stream arrives before ICE connects.
+        case 'connected':
+          if (_durationTimer == null) _startTimer();
+          setState(() {
+            _statusLabel = 'Connected';
+            globalCallStateController.updateState(CallState.connected);
+          });
+          break;
       }
     });
 
-    // Also watch the Firestore document directly — catches cases where the
-    // callee rejects via Firestore but the callStatus stream didn't fire.
+    // Watch Firestore document directly for end/reject/accept events.
     _callDocSub = WebRtcService.watchCall(widget.call.callId).listen((call) {
       if (!mounted || call == null) return;
       if (call.status == 'ended' || call.status == 'rejected') {
         _endCallAndPop(fromRemote: true);
+      } else if (call.status == 'accepted') {
+        // FIX 3b: Callee accepted — cancel the 60 s auto-end timer.
+        // Without this, if the receiver comes back online near the deadline
+        // the timer fires before ICE finishes establishing through TURN.
+        _autoEndTimer?.cancel();
+        _autoEndTimer = null;
+        debugPrint('✅ [CallingScreen] Callee accepted — auto-end timer cancelled');
       }
     });
 
@@ -131,8 +161,9 @@ class _CallingScreenState extends State<CallingScreen>
           callId: widget.call.callId,
           isVideo: widget.call.isVideo,
         );
-        // Offer written — callee can now see the call.
-        if (mounted) setState(() => _statusLabel = 'Ringing...');
+        // Offer written to Firestore. Stay on "Calling..." until
+        // the receiver's device writes receiverOnline:true, which
+        // fires the 'ringing' status and switches the label.
       } else {
         await _webrtc.joinCall(
           callId: widget.call.callId,
@@ -218,8 +249,9 @@ class _CallingScreenState extends State<CallingScreen>
       // Prevent the route from popping without user confirmation.
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
-        if (didPop)
+        if (didPop) {
           return; // already popped (shouldn't happen when canPop=false)
+        }
         await _onBackPressed();
       },
       child: Scaffold(
@@ -296,7 +328,10 @@ class _CallingScreenState extends State<CallingScreen>
   } // end _onBackPressed
 
   Widget _buildRemoteView() {
-    if (widget.call.isVideo && _remoteConnected) {
+    // Only show the live remote video once ICE has truly connected
+    // (timer running). Before that, RTCVideoView is just a black rectangle
+    // — show the avatar + spinner instead.
+    if (widget.call.isVideo && _remoteConnected && _durationTimer != null) {
       return Positioned.fill(
         child: RTCVideoView(
           _remoteRenderer,
@@ -365,9 +400,28 @@ class _CallingScreenState extends State<CallingScreen>
                 ),
               ),
               const SizedBox(height: 8),
-              // Animated dots when not yet connected
-              if (!_remoteConnected)
-                _AnimatedStatusDots(label: _statusLabel)
+              // Show animated status dots while ICE not yet established.
+              // Switch to timer only once _startTimer() has been called.
+              if (_durationTimer == null) ...
+                [
+                  // Spinner shown when stream arrived (SDP done) but ICE
+                  // not yet connected — replaces the black video rectangle.
+                  if (_remoteConnected)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white54,
+                          ),
+                        ),
+                      ),
+                    ),
+                  _AnimatedStatusDots(label: _statusLabel),
+                ]
               else
                 Text(
                   _formattedDuration,
@@ -446,8 +500,10 @@ class _CallingScreenState extends State<CallingScreen>
                 ),
               ),
               const Spacer(),
-              // Duration when connected
-              if (_remoteConnected && widget.call.isVideo)
+              // Show duration only after timer is truly running
+              // (i.e., after ICE connected). Using _remoteConnected would
+              // show a frozen "00:00" before the timer starts.
+              if (_durationTimer != null && widget.call.isVideo)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,

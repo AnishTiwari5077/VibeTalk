@@ -18,6 +18,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:http/http.dart' as http;
+import 'package:vibetalk/core/env_config.dart';
 import 'package:vibetalk/models/call_model.dart';
 
 class WebRtcService {
@@ -66,11 +67,19 @@ class WebRtcService {
   };
 
   /// Fetches fresh, time-limited TURN credentials from Metered.ca REST API.
-  /// Falls back to STUN-only if the network request fails.
+  /// Falls back to STUN-only if the network request fails or METERED_API_KEY
+  /// is not configured in dart_defines.json.
   static Future<Map<String, dynamic>> _fetchIceServers() async {
-    const apiKey = '8bf8c611614a7e8c7b77c991e03524cf22b8';
-    const url =
-        'https://chartapp.metered.live/api/v1/turn/credentials?apiKey=$apiKey';
+    final apiKey = EnvConfig.meteredApiKey;
+    if (apiKey.isEmpty) {
+      debugPrint(
+        '⚠️ [WebRTC] METERED_API_KEY not set — using STUN-only fallback. '
+        'Add METERED_API_KEY to dart_defines.json for TURN support.',
+      );
+      return _fallbackIceServers;
+    }
+    const host = 'https://chartapp.metered.live';
+    final url = '$host/api/v1/turn/credentials?apiKey=$apiKey';
     try {
       final response = await http
           .get(Uri.parse(url))
@@ -161,6 +170,16 @@ class WebRtcService {
           if (status == 'rejected' || status == 'ended') {
             _callStatusController.add(status ?? 'ended');
             return;
+          }
+
+          // ── receiverOnline signal ────────────────────────────────────────
+          // The callee writes receiverOnline:true the moment it joins
+          // (regardless of whether it came from IncomingCallScreen or a
+          // background/killed notification Accept). Emit 'ringing' so the
+          // CallingScreen can switch from "Calling..." to "Ringing..." once
+          // the receiver's device has actually received the call.
+          if (data['receiverOnline'] == true) {
+            _callStatusController.add('ringing');
           }
 
           if (_peerConnection?.signalingState ==
@@ -275,10 +294,15 @@ class WebRtcService {
     }
     _pendingCandidates.clear();
 
-    // Write answer + update status
+    // Write answer + update status + signal caller that receiver is online.
+    // receiverOnline:true is the trigger for the caller's "Calling..."
+    // → "Ringing..." transition. Written here so it fires for ALL accept
+    // paths: in-app IncomingCallScreen, background notification Accept,
+    // and killed-state notification Accept.
     await FirebaseFirestore.instance.collection('calls').doc(callId).update({
       'answer': {'type': answer.type, 'sdp': answer.sdp},
       'status': 'accepted',
+      'receiverOnline': true,
     });
 
     _callStatusController.add('accepted');
@@ -422,16 +446,46 @@ class WebRtcService {
       }
     };
 
+    // FIX 1: Only RTCPeerConnectionStateFailed is permanent.
+    // Disconnected is transient — WebRTC self-heals for up to 30 s.
+    // Treating Disconnected as Failed destroyed the peer connection before
+    // the receiver could come back online and accept the call.
     _peerConnection!.onConnectionState = (RTCPeerConnectionState state) {
       debugPrint('🔌 [WebRTC] Connection state: $state');
-      if (state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
-          state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
-        _callStatusController.add('ended');
+      switch (state) {
+        case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
+          // Permanent failure — end the call.
+          _callStatusController.add('ended');
+          break;
+        case RTCPeerConnectionState.RTCPeerConnectionStateDisconnected:
+          // Transient WiFi blip / handover. WebRTC retries for ~5–30 s
+          // before promoting to Failed. Keep the connection alive; notify UI.
+          _callStatusController.add('reconnecting');
+          break;
+        case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
+          // True ICE connection established — re-publish remote stream so the
+          // renderer recovers if it went black during a Disconnected blip.
+          // Emit 'connected' (not 'accepted') so CallingScreen only starts
+          // the call timer on a genuine ICE connection, not on SDP alone.
+          if (_remoteStream != null) {
+            _remoteStreamController.add(_remoteStream);
+          }
+          _callStatusController.add('connected');
+          break;
+        default:
+          break;
       }
     };
 
+    // FIX 2: Restart ICE when it fails so fresh candidates are gathered
+    // for the current network config. restartIce() does NOT close the
+    // peer connection — it re-enters ICE checking.
     _peerConnection!.onIceConnectionState = (RTCIceConnectionState state) {
       debugPrint('🧊 [WebRTC] ICE state: $state');
+      if (state == RTCIceConnectionState.RTCIceConnectionStateFailed) {
+        debugPrint('🔄 [WebRTC] ICE failed — calling restartIce()');
+        _peerConnection?.restartIce();
+      }
     };
   }
 

@@ -37,6 +37,10 @@ class EnvConfig {
     'FIREBASE_STORAGE_BUCKET',
   );
 
+  // WebRTC / TURN
+  static const meteredApiKey = String.fromEnvironment('METERED_API_KEY');
+
+
   static bool get isConfigured {
     return cloudinaryCloudName.isNotEmpty && firebaseProjectId.isNotEmpty;
   }

@@ -354,15 +354,18 @@ class ConversationController {
         debugPrint('File size: ${fileSize / (1024 * 1024)} MB');
       }
 
-      if (kDebugMode) debugPrint('Uploading ${type.name} to Cloudinary...');
+      if (kDebugMode) {
+        debugPrint('Uploading ${type.name} to Cloudinary...');
+      }
       final mediaUrl = await _storageRepo.uploadChatMedia(
         chatId: chatId,
         file: file,
         fileType: type.toString().split('.').last,
       );
 
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint('${type.name} uploaded successfully: $mediaUrl');
+      }
 
       final content = type == MessageType.image
           ? 'Image'
@@ -576,7 +579,18 @@ class ConversationController {
   Future<void> makeAudioCall() => _makeCall(isVideo: false);
   Future<void> makeVideoCall() => _makeCall(isVideo: true);
 
+  // Guard against rapid double-taps: prevents two CallingScreens being
+  // pushed simultaneously, which forces the user to press End twice.
+  bool _isMakingCall = false;
+
   Future<void> _makeCall({required bool isVideo}) async {
+    // Prevent double-tap from pushing two CallingScreens.
+    if (_isMakingCall) {
+      debugPrint('⚠️ [CALL] _makeCall ignored — already in progress');
+      return;
+    }
+    _isMakingCall = true;
+
     final callLabel = isVideo ? '🎥 VIDEO' : '📞 AUDIO';
     debugPrint('$callLabel [CALL] makeCall(isVideo=$isVideo) tapped');
 
@@ -642,14 +656,18 @@ class ConversationController {
           status: 'ringing',
           createdAt: DateTime.now(),
         );
-        Navigator.of(context).push(
+        await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => CallingScreen(call: call, isCaller: true),
           ),
         );
+        // CallingScreen popped (call ended) — reset flag so user can
+        // immediately make another call without restarting the app.
+        _isMakingCall = false;
       }
     } catch (e) {
       debugPrint('❌ [CALL] Call error: $e');
+      _isMakingCall = false; // allow retry after error
       try {
         if (context.mounted) {
           ScaffoldMessenger.of(
