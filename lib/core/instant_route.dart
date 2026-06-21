@@ -13,12 +13,12 @@ import 'package:flutter/material.dart';
 
 class InstantRoute<T> extends PageRouteBuilder<T> {
   InstantRoute(Widget page)
-      : super(
-          pageBuilder: (_, __, ___) => page,
-          // Zero duration = instant switch, no visible slide/fade.
-          transitionDuration: Duration.zero,
-          reverseTransitionDuration: Duration.zero,
-          // Return the child as-is — no animation builder needed.
-          transitionsBuilder: (_, __, ___, child) => child,
-        );
+    : super(
+        pageBuilder: (_, __, ___) => page,
+        // Zero duration = instant switch, no visible slide/fade.
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        // Return the child as-is — no animation builder needed.
+        transitionsBuilder: (_, _, _, child) => child,
+      );
 }

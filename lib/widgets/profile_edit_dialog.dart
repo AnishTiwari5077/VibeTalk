@@ -281,7 +281,8 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
     if (_newAvatar != null) {
       return FileImage(_newAvatar!) as ImageProvider;
     } else if (widget.user.avatarUrl != null) {
-      return CachedNetworkImageProvider(widget.user.avatarUrl!) as ImageProvider;
+      return CachedNetworkImageProvider(widget.user.avatarUrl!)
+          as ImageProvider;
     }
     return null;
   }
