@@ -18,6 +18,7 @@ import 'package:vibetalk/screens/home_screen.dart';
 import 'package:vibetalk/screens/sign_screen.dart';
 import 'package:vibetalk/screens/splash_screen.dart';
 import 'package:vibetalk/services/notification_services.dart';
+import 'package:vibetalk/core/instant_route.dart';
 
 class AuthenticationWrapper extends ConsumerStatefulWidget {
   const AuthenticationWrapper({super.key});
@@ -81,7 +82,7 @@ class _AuthenticationWrapperState extends ConsumerState<AuthenticationWrapper> {
 
       Navigator.of(ctx)
           .push(
-            MaterialPageRoute(builder: (_) => IncomingCallScreen(call: call)),
+            InstantRoute(IncomingCallScreen(call: call)),
           )
           .then((_) {
             // Reset so a new call can be shown after this one ends
