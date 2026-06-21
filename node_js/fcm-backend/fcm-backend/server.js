@@ -150,10 +150,13 @@ app.post('/send-call', async (req, res) => {
 
     const message = {
       token,
-      // DATA-ONLY — no 'notification' key.
-      // This ensures _firebaseMessagingBackgroundHandler fires on EVERY Android
-      // state (killed / background). The handler then shows a custom local
-      // notification with fullScreenIntent so it behaves like a call screen.
+
+      // DATA-ONLY — NO 'notification' key at any level.
+      // If a notification block is present, Android shows a system FCM
+      // notification that opens the app directly when tapped (bypassing
+      // our Accept/Decline local notification). Data-only ensures ONLY
+      // _firebaseMessagingBackgroundHandler fires and shows our custom
+      // local notification with fullScreenIntent + action buttons.
       data: {
         type      : 'call',
         callId    : String(callId),
@@ -162,15 +165,31 @@ app.post('/send-call', async (req, res) => {
         title     : String(callerName),
         body      : callLabel,
       },
+
       android: {
-        priority: 'high',          // wakes Doze-mode devices
+        priority: 'high',     // wakes Doze-mode devices
+
+        // Call expires in 60 s — matches CallingScreen auto-cancel timer.
+        // Prevents stale call notifications after the caller hangs up.
+        // Firebase Admin SDK requires milliseconds as a number (not '60s').
+        ttl: 60 * 1000,
+
+        // Deduplicates retried messages for the same call.
+        collapseKey: callId,
+
+        // Required on Realme/Xiaomi — fires even in Direct Boot mode
+        // (device just booted and not yet unlocked by user).
+        directBootOk: true,
       },
+
       apns: {
-        headers: { 'apns-priority': '10' },
+        headers: {
+          'apns-priority'   : '10',
+          // Expire the push at the same time as the call TTL
+          'apns-expiration' : String(Math.floor(Date.now() / 1000) + 60),
+        },
         payload: {
-          aps: {
-            'content-available': 1,  // wakes iOS background
-          },
+          aps: { 'content-available': 1 },  // wakes iOS background
         },
       },
     };

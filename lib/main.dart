@@ -34,12 +34,29 @@ Future<void> _requestAllPermissions() async {
     Permission.camera,
     Permission.bluetoothConnect,
     Permission.notification,
+    // systemAlertWindow allows drawing over other apps (needed for
+    // full-screen call overlays on Android 6-13).
     Permission.systemAlertWindow,
   ].request();
 
   statuses.forEach((permission, status) {
     debugPrint('🔐 $permission: $status');
   });
+
+  // Android 14+ (API 34) requires USE_FULL_SCREEN_INTENT to be granted
+  // explicitly by the user for call-style full-screen notifications.
+  // Without this, fullScreenIntent:true falls back to a heads-up banner.
+  if (await Permission.scheduleExactAlarm.isDenied) {
+    await Permission.scheduleExactAlarm.request();
+  }
+
+  // Request ignoring battery optimization so FCM wakes the app reliably
+  // in killed state. On Realme/Xiaomi/OPPO this is especially important.
+  final batteryStatus = await Permission.ignoreBatteryOptimizations.status;
+  if (batteryStatus.isDenied) {
+    debugPrint('⚡ Requesting battery optimization exemption...');
+    await Permission.ignoreBatteryOptimizations.request();
+  }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -253,15 +270,16 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
 
     debugPrint('📞 Call notification — callId: $callId, action: $actionId');
 
-    // Set suppression SYNCHRONOUSLY before any async work.
-    // This guarantees auth_wrapper._listenForIncomingCalls sees it before
-    // the incomingCallProvider Firestore stream emits.
-    if (actionId == 'accept_call') {
-      NotificationService.suppressIncomingCallUI(callId);
-    }
+    // Suppress BEFORE any async work so auth_wrapper's Firestore stream
+    // cannot push a duplicate IncomingCallScreen while we are navigating.
+    // This covers both Accept taps AND regular notification taps.
+    NotificationService.suppressIncomingCallUI(callId);
 
     final context = navigatorKey.currentContext;
-    if (context == null) return;
+    if (context == null) {
+      NotificationService.clearSuppressedCall();
+      return;
+    }
 
     try {
       final snap = await FirebaseFirestore.instance
@@ -283,7 +301,10 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
         return;
       }
 
-      if (!context.mounted) return;
+      if (!context.mounted) {
+        NotificationService.clearSuppressedCall();
+        return;
+      }
 
       if (actionId == 'accept_call') {
         // User tapped ✅ Accept on notification shade — skip IncomingCallScreen.
@@ -295,10 +316,15 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
             )
             .then((_) => NotificationService.clearSuppressedCall());
       } else {
-        // Regular tap — show IncomingCallScreen normally.
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => IncomingCallScreen(call: call)),
-        );
+        // Regular notification tap — show IncomingCallScreen.
+        // Clear suppression AFTER push so auth_wrapper sees it and skips.
+        Navigator.of(context)
+            .push(
+              MaterialPageRoute(
+                builder: (_) => IncomingCallScreen(call: call),
+              ),
+            )
+            .then((_) => NotificationService.clearSuppressedCall());
       }
     } catch (e) {
       NotificationService.clearSuppressedCall();

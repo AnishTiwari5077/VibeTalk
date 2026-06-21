@@ -37,10 +37,9 @@ Future<void> onNotificationActionBackground(
     // Initialize Firebase in this background isolate so we can write Firestore.
     await Firebase.initializeApp();
 
-    await FirebaseFirestore.instance
-        .collection('calls')
-        .doc(callId)
-        .update({'status': 'rejected'});
+    await FirebaseFirestore.instance.collection('calls').doc(callId).update({
+      'status': 'rejected',
+    });
 
     debugPrint('📞 [BG] Call $callId rejected from notification shade');
   } catch (e) {
@@ -80,8 +79,8 @@ class NotificationService {
   // Uses the device's default RINGTONE sound (not notification sound).
   // Channel ID is versioned — changing the sound requires a new channel ID
   // because Android locks channel settings after first creation.
-  static const AndroidNotificationChannel _callChannel =
-      AndroidNotificationChannel(
+  static const AndroidNotificationChannel
+  _callChannel = AndroidNotificationChannel(
     'call_channel_v2',
     'Incoming Calls',
     description: 'Ringing notifications for incoming voice and video calls',
@@ -127,7 +126,7 @@ class NotificationService {
 
   /// Set this in main.dart to navigate when a chat notification is tapped.
   static Function(String chatId, String friendId, String friendUsername)?
-      onNotificationTap;
+  onNotificationTap;
 
   /// Set this in main.dart to open IncomingCallScreen when a call notification
   /// is tapped while the app is in background or killed state.
@@ -184,18 +183,21 @@ class NotificationService {
 
       await _localNotifications
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
+            AndroidFlutterLocalNotificationsPlugin
+          >()
           ?.createNotificationChannel(_channel);
 
       // Also create the call channel so Android registers it before
       // the first call arrives.
       await _localNotifications
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
+            AndroidFlutterLocalNotificationsPlugin
+          >()
           ?.createNotificationChannel(_callChannel);
 
-      const androidSettings =
-          AndroidInitializationSettings('@mipmap/ic_launcher');
+      const androidSettings = AndroidInitializationSettings(
+        '@mipmap/ic_launcher',
+      );
       const iosSettings = DarwinInitializationSettings(
         requestAlertPermission: true,
         requestBadgePermission: true,
@@ -209,7 +211,8 @@ class NotificationService {
       await _localNotifications.initialize(
         initSettings,
         onDidReceiveNotificationResponse: _onNotificationTapped,
-        onDidReceiveBackgroundNotificationResponse: onNotificationActionBackground,
+        onDidReceiveBackgroundNotificationResponse:
+            onNotificationActionBackground,
       );
 
       await _messaging.setForegroundNotificationPresentationOptions(
@@ -236,12 +239,14 @@ class NotificationService {
   static Future<void> initializeForBackground() async {
     await _localNotifications
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(_channel);
 
     await _localNotifications
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(_callChannel);
 
     const initSettings = InitializationSettings(
@@ -255,7 +260,8 @@ class NotificationService {
   // ---------------------------------------------------------------------------
 
   static Future<void> _handleForegroundMessage(RemoteMessage message) async {
-    if (kDebugMode) debugPrint('📩 Foreground message received: ${message.data}');
+    if (kDebugMode)
+      debugPrint('📩 Foreground message received: ${message.data}');
 
     final type = message.data['type'] as String?;
 
@@ -263,14 +269,18 @@ class NotificationService {
     // IncomingCallScreen when the app is foreground. Showing a local
     // notification here would create a duplicate the user sees simultaneously.
     if (type == 'call') {
-      if (kDebugMode) debugPrint('📞 Foreground call — skipping notification (Firestore stream handles UI)');
+      if (kDebugMode)
+        debugPrint(
+          '📞 Foreground call — skipping notification (Firestore stream handles UI)',
+        );
       return;
     }
 
     // Suppress if user is already in the chat that sent this message
     final chatId = message.data['chatId'] as String?;
     if (chatId != null && chatId == _activeChatId) {
-      if (kDebugMode) debugPrint('🔕 Suppressing notification — user is in chat: $chatId');
+      if (kDebugMode)
+        debugPrint('🔕 Suppressing notification — user is in chat: $chatId');
       return;
     }
 
@@ -283,12 +293,12 @@ class NotificationService {
     final type = data['type'] as String?;
 
     // Prefer notification object; fall back to data payload fields
-    final title = notification?.title ??
+    final title =
+        notification?.title ??
         data['title'] ??
         data['senderName'] ??
         'New Message';
-    final body =
-        notification?.body ?? data['body'] ?? data['message'] ?? '';
+    final body = notification?.body ?? data['body'] ?? data['message'] ?? '';
 
     if (!kIsWeb) {
       NotificationDetails details;
@@ -402,7 +412,9 @@ class NotificationService {
           onCallDeclineTap?.call(callId);
         } else {
           // Regular tap or Accept button — pass actionId so caller can auto-accept
-          debugPrint('📞 Call tapped/accepted — callId: $callId, action: $actionId');
+          debugPrint(
+            '📞 Call tapped/accepted — callId: $callId, action: $actionId',
+          );
           onCallNotificationTap?.call(callId, actionId: actionId);
         }
         break;
@@ -458,11 +470,11 @@ class NotificationService {
     required String senderId,
   }) async {
     return _post('/send-message', {
-      'token'     : receiverToken,
+      'token': receiverToken,
       'senderName': senderName,
-      'senderId'  : senderId,
-      'chatId'    : chatId,
-      'body'      : messageContent,
+      'senderId': senderId,
+      'chatId': chatId,
+      'body': messageContent,
     });
   }
 
@@ -475,10 +487,10 @@ class NotificationService {
     required String requestId,
   }) async {
     return _post('/send-friend-request', {
-      'token'     : receiverToken,
+      'token': receiverToken,
       'senderName': senderName,
-      'senderId'  : senderId,
-      'requestId' : requestId,
+      'senderId': senderId,
+      'requestId': requestId,
     });
   }
 
@@ -491,10 +503,10 @@ class NotificationService {
     required String chatId,
   }) async {
     return _post('/send-request-accepted', {
-      'token'       : receiverToken,
+      'token': receiverToken,
       'acceptorName': acceptorName,
-      'acceptorId'  : acceptorId,
-      'chatId'      : chatId,
+      'acceptorId': acceptorId,
+      'chatId': chatId,
     });
   }
 
@@ -507,12 +519,12 @@ class NotificationService {
     required bool isVideo,
   }) async {
     return _post('/send-call', {
-      'token'     : receiverToken,
+      'token': receiverToken,
       'callerName': callerName,
-      'callId'    : callId,
-      'isVideo'   : isVideo,
-      'title'     : callerName,
-      'body'      : isVideo
+      'callId': callId,
+      'isVideo': isVideo,
+      'title': callerName,
+      'body': isVideo
           ? '$callerName is video calling you…'
           : '$callerName is calling you…',
     });
@@ -528,8 +540,8 @@ class NotificationService {
     return _post('/send-notification', {
       'token': token,
       'title': title,
-      'body' : body,
-      'data' : data ?? {},
+      'body': body,
+      'data': data ?? {},
     });
   }
 
@@ -537,11 +549,15 @@ class NotificationService {
   // HTTP helper — all requests go through here
   // ---------------------------------------------------------------------------
 
-  static Future<bool> _post(String endpoint, Map<String, dynamic> payload) async {
+  static Future<bool> _post(
+    String endpoint,
+    Map<String, dynamic> payload,
+  ) async {
     try {
       if (_backendUrl.isEmpty) {
         debugPrint(
-            '❌ Backend URL not configured — set NOTIFICATION_BACKEND_URL in dart_defines.json');
+          '❌ Backend URL not configured — set NOTIFICATION_BACKEND_URL in dart_defines.json',
+        );
         return false;
       }
 
@@ -560,7 +576,9 @@ class NotificationService {
         debugPrint('✅ $endpoint succeeded: ${response.body}');
         return true;
       } else {
-        debugPrint('❌ $endpoint failed [${response.statusCode}]: ${response.body}');
+        debugPrint(
+          '❌ $endpoint failed [${response.statusCode}]: ${response.body}',
+        );
         return false;
       }
     } catch (e) {
@@ -568,7 +586,8 @@ class NotificationService {
       if (e.toString().contains('SocketException') ||
           e.toString().contains('Connection')) {
         debugPrint(
-            '  → Check: backend is running, NOTIFICATION_BACKEND_URL is correct, device is on same network');
+          '  → Check: backend is running, NOTIFICATION_BACKEND_URL is correct, device is on same network',
+        );
       }
       return false;
     }
@@ -584,8 +603,8 @@ class NotificationService {
   /// `getNotificationAppLaunchDetails` is the correct API.
   static Future<void> checkNotificationLaunchDetails() async {
     try {
-      final details =
-          await _localNotifications.getNotificationAppLaunchDetails();
+      final details = await _localNotifications
+          .getNotificationAppLaunchDetails();
       if (details?.didNotificationLaunchApp == true) {
         final payload = details?.notificationResponse?.payload;
         final actionId = details?.notificationResponse?.actionId;
@@ -603,10 +622,11 @@ class NotificationService {
   /// Pre-extract the call ID from a notification that launched the app
   /// from killed state. Call this BEFORE runApp() to avoid the brief
   /// SplashScreen flash when navigating to IncomingCallScreen.
-  static Future<({String callId, String? actionId})?> extractPendingCall() async {
+  static Future<({String callId, String? actionId})?>
+  extractPendingCall() async {
     try {
-      final details =
-          await _localNotifications.getNotificationAppLaunchDetails();
+      final details = await _localNotifications
+          .getNotificationAppLaunchDetails();
       if (details?.didNotificationLaunchApp == true) {
         final payload = details?.notificationResponse?.payload;
         final actionId = details?.notificationResponse?.actionId;
