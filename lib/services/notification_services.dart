@@ -164,6 +164,19 @@ class NotificationService {
     _suppressedCallId = null;
   }
 
+  /// Cancels the local call notification for [callId].
+  /// Called by auth_wrapper when the Firestore stream detects the call
+  /// is no longer ringing (caller cancelled before receiver answered),
+  /// so the banner disappears from the notification shade automatically.
+  static Future<void> cancelCallNotification(String callId) async {
+    try {
+      await _localNotifications.cancel(callId.hashCode);
+      debugPrint('🔕 Cancelled call notification for: $callId');
+    } catch (e) {
+      debugPrint('⚠️ Failed to cancel call notification: $e');
+    }
+  }
+
   static Future<void> initialize() async {
     if (_isInitialized) return;
 
@@ -260,8 +273,9 @@ class NotificationService {
   // ---------------------------------------------------------------------------
 
   static Future<void> _handleForegroundMessage(RemoteMessage message) async {
-    if (kDebugMode)
+    if (kDebugMode) {
       debugPrint('📩 Foreground message received: ${message.data}');
+    }
 
     final type = message.data['type'] as String?;
 
@@ -269,18 +283,31 @@ class NotificationService {
     // IncomingCallScreen when the app is foreground. Showing a local
     // notification here would create a duplicate the user sees simultaneously.
     if (type == 'call') {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint(
           '📞 Foreground call — skipping notification (Firestore stream handles UI)',
         );
+      }
+      return;
+    }
+
+    // Caller ended the call before receiver answered.
+    // Cancel the ringing notification on this device immediately.
+    if (type == 'cancel_call') {
+      final callId = message.data['callId'] as String? ?? '';
+      if (callId.isNotEmpty) {
+        await _localNotifications.cancel(callId.hashCode);
+        debugPrint('🔕 Foreground: cancelled call notification for $callId');
+      }
       return;
     }
 
     // Suppress if user is already in the chat that sent this message
     final chatId = message.data['chatId'] as String?;
     if (chatId != null && chatId == _activeChatId) {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint('🔕 Suppressing notification — user is in chat: $chatId');
+      }
       return;
     }
 
@@ -302,6 +329,18 @@ class NotificationService {
 
     if (!kIsWeb) {
       NotificationDetails details;
+
+      // Caller ended the call before receiver answered.
+      // Cancel the ringing notification silently (no new banner).
+      // This runs in the background isolate when a cancel_call FCM arrives.
+      if (type == 'cancel_call') {
+        final callId = data['callId'] as String? ?? '';
+        if (callId.isNotEmpty) {
+          await _localNotifications.cancel(callId.hashCode);
+          debugPrint('🔕 Background: cancelled call notification for $callId');
+        }
+        return;
+      }
 
       if (type == 'call') {
         // Full-screen intent pops over the lock screen (Android 10+).
@@ -369,8 +408,16 @@ class NotificationService {
         details = NotificationDetails(android: androidDetails, iOS: iosDetails);
       }
 
+      // Use callId.hashCode as a stable notification ID for calls.
+      // This lets cancelCallNotification() find and dismiss the exact
+      // notification when the caller hangs up before the receiver answers.
+      // For other types, message.hashCode is fine (each message is unique).
+      final notifId = (type == 'call')
+          ? (data['callId'] as String? ?? '').hashCode
+          : message.hashCode;
+
       await _localNotifications.show(
-        message.hashCode,
+        notifId,
         title,
         body,
         details,
@@ -527,6 +574,20 @@ class NotificationService {
       'body': isVideo
           ? '$callerName is video calling you…'
           : '$callerName is calling you…',
+    });
+  }
+
+  /// POST /send-cancel-call
+  /// Sends a data-only `type: cancel_call` FCM to the receiver so their
+  /// background handler cancels the ringing notification immediately,
+  /// even when their app is killed (no active Firestore stream).
+  static Future<bool> sendCancelCallNotification({
+    required String receiverToken,
+    required String callId,
+  }) async {
+    return _post('/send-cancel-call', {
+      'token': receiverToken,
+      'callId': callId,
     });
   }
 

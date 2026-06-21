@@ -11,11 +11,10 @@
 //   NOTE: Call notifications use /send-call which sends a DATA-ONLY
 //         high-priority FCM payload so the device wakes even in killed state.
 
-const express    = require('express');
-const admin      = require('firebase-admin');
-const bodyParser = require('body-parser');
-const cors       = require('cors');
-const rateLimit  = require('express-rate-limit');
+const express   = require('express');
+const admin     = require('firebase-admin');
+const cors      = require('cors');
+const rateLimit = require('express-rate-limit');
 
 // =======================
 // CONFIG
@@ -29,10 +28,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());  // replaces deprecated body-parser
 
-// Rate limit: max 30 requests per minute per IP
+// Rate limit: max 60 requests per minute per IP
+// (30 was too low — call retries from a single device could hit it)
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
+  max: 60,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Too many requests, please try again later.' },
@@ -174,8 +174,9 @@ app.post('/send-call', async (req, res) => {
         // Firebase Admin SDK requires milliseconds as a number (not '60s').
         ttl: 60 * 1000,
 
-        // Deduplicates retried messages for the same call.
-        collapseKey: callId,
+        // Deduplicates retried FCM deliveries for the same call.
+        // collapseKey goes inside android in the Admin SDK (not top-level).
+        collapseKey: String(callId),
 
         // Required on Realme/Xiaomi — fires even in Direct Boot mode
         // (device just booted and not yet unlocked by user).
@@ -197,6 +198,39 @@ app.post('/send-call', async (req, res) => {
     const response = await admin.messaging().send(message);
     console.log('✅ Call FCM sent:', response);
     return res.json({ success: true, messageId: response });
+  } catch (e) {
+    return fail(res, e);
+  }
+});
+
+// =======================
+// CANCEL CALL NOTIFICATION
+// =======================
+// Body: { token, callId }
+//
+// Sent by the CALLER when they cancel before the receiver answers.
+// The receiver's background isolate calls _localNotifications.cancel(callId.hashCode)
+// so the ringing notification disappears even when the receiver's app is killed.
+app.post('/send-cancel-call', async (req, res) => {
+  try {
+    const { token, callId } = req.body;
+    console.log('🔕 /send-cancel-call:', { callId });
+
+    const required = missing(req.body, ['token', 'callId']);
+    if (required.length) {
+      return res.status(400).json({ success: false, error: `Missing fields: ${required.join(', ')}` });
+    }
+
+    // Data-only — no notification block so Android doesn't show a new banner.
+    // The Flutter background handler sees type:'cancel_call' and cancels the
+    // existing ringing notification silently.
+    const message = buildDataMessage(token, {
+      type  : 'cancel_call',
+      callId: String(callId),
+    });
+
+    const response = await sendFcm(message);
+    return ok(res, response);
   } catch (e) {
     return fail(res, e);
   }

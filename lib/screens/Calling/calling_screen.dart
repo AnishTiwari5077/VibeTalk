@@ -5,12 +5,14 @@
 // Controls: mute, speaker, camera flip, camera toggle, hang-up.
 
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:vibetalk/models/call_model.dart';
 import 'package:vibetalk/providers/call_state_provider.dart';
+import 'package:vibetalk/services/notification_services.dart';
 import 'package:vibetalk/services/webrtc_service.dart';
 import 'package:vibetalk/theme/app_theme.dart';
 
@@ -196,6 +198,13 @@ class _CallingScreenState extends State<CallingScreen>
 
     if (!fromRemote) {
       await _webrtc.endCall(widget.call.callId);
+      // When the CALLER ends the call before the receiver answers,
+      // the receiver's notification banner stays if their app is killed
+      // (no Firestore listener active). Send a cancel FCM so their
+      // background handler dismisses it immediately.
+      if (widget.isCaller) {
+        _cancelReceiverNotification(); // fire-and-forget
+      }
     } else {
       // Bug 1 fix: remote already wrote to Firestore (status: ended/rejected).
       // Only clean up local WebRTC resources — do NOT overwrite the status,
@@ -205,6 +214,26 @@ class _CallingScreenState extends State<CallingScreen>
 
     globalCallStateController.updateState(CallState.ended);
     if (mounted) Navigator.of(context).pop();
+  }
+
+  /// Looks up the receiver's FCM token from Firestore and sends a
+  /// `type: cancel_call` FCM message so their background handler cancels
+  /// the ringing notification even when their app is killed.
+  void _cancelReceiverNotification() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.call.calleeId)
+          .get();
+      final token = snap.data()?['fcmToken'] as String?;
+      if (token == null || token.isEmpty) return;
+      await NotificationService.sendCancelCallNotification(
+        receiverToken: token,
+        callId: widget.call.callId,
+      );
+    } catch (e) {
+      debugPrint('⚠️ Failed to cancel receiver notification: $e');
+    }
   }
 
   @override

@@ -48,7 +48,22 @@ class _AuthenticationWrapperState extends ConsumerState<AuthenticationWrapper> {
   void _listenForIncomingCalls() {
     ref.listenManual<AsyncValue<CallModel?>>(incomingCallProvider, (_, next) {
       final call = next.asData?.value;
-      if (call == null) return;
+
+      if (call == null) {
+        // Call ended or was cancelled by the caller before the receiver
+        // answered. Cancel the ringing notification so it disappears from
+        // the notification shade automatically.
+        if (_shownCallId != null) {
+          NotificationService.cancelCallNotification(_shownCallId!);
+          // Reset so the next call is never blocked by a stale callId.
+          // (When IncomingCallScreen WAS shown, .then() below resets it;
+          // this handles the background-only-notification path where
+          // IncomingCallScreen was never pushed onto the navigator.)
+          _shownCallId = null;
+        }
+        return;
+      }
+
       if (call.callId == _shownCallId) return; // already showing
 
       // main.dart navigated directly to CallingScreen via notification Accept.
