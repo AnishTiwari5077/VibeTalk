@@ -250,7 +250,6 @@ class ChatService {
     }
   }
 
-
   Future<void> clearConversation(String chatId) async {
     try {
       // Delete all messages in batches of 500 until the collection is empty.
