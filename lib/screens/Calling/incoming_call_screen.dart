@@ -75,6 +75,13 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
       }
     });
 
+    // Signal the caller that this IncomingCallScreen opened successfully.
+    // This writes receiverOnline:true to the call document so the caller's
+    // label switches from 'Calling...' → 'Ringing.....'.
+    // Fire-and-forget: failure just means caller stays on 'Calling...'
+    // (accurate — better than a false 'Ringing' when receiver is offline).
+    WebRtcService.signalReceiverOnline(widget.call.callId);
+
     // Start ringtone — content URI plays the device's selected ringtone.
     // Loop so it keeps ringing until accepted or rejected.
     _startRingtone();
@@ -151,17 +158,17 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
 
   /// Letter avatar used while the network image is loading or when no URL exists.
   Widget _letterAvatar(String name) => Container(
-        color: AppTheme.primaryLight,
-        alignment: Alignment.center,
-        child: Text(
-          name.isNotEmpty ? name[0].toUpperCase() : '?',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 60,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      );
+    color: AppTheme.primaryLight,
+    alignment: Alignment.center,
+    child: Text(
+      name.isNotEmpty ? name[0].toUpperCase() : '?',
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 60,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -256,7 +263,8 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
                           // 4-px gradient ring around the photo
                           padding: const EdgeInsets.all(4),
                           child: ClipOval(
-                            child: callerAvatar != null && callerAvatar.isNotEmpty
+                            child:
+                                callerAvatar != null && callerAvatar.isNotEmpty
                                 ? Image.network(
                                     callerAvatar,
                                     width: 140,
@@ -265,10 +273,10 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
                                     // Show letter avatar while the image loads
                                     loadingBuilder: (_, child, progress) =>
                                         progress == null
-                                            ? child
-                                            : _letterAvatar(callerName),
+                                        ? child
+                                        : _letterAvatar(callerName),
                                     // Fall back to letter avatar on error
-                                    errorBuilder: (_, __, ___) =>
+                                    errorBuilder: (_, _, _) =>
                                         _letterAvatar(callerName),
                                   )
                                 : _letterAvatar(callerName),

@@ -56,6 +56,9 @@ class WebRtcService {
   // Guard: prevents createCall/joinCall being called while already in progress
   // (happens when the same notification is processed twice).
   bool _isCallInProgress = false;
+  // Guard: emit 'ringing' only once per call session when receiver opens
+  // IncomingCallScreen and writes receiverOnline:true to Firestore.
+  bool _ringingEmitted = false;
 
   // ─── ICE server fallback (used only if API fetch fails) ─────────────────
   static const _fallbackIceServers = {
@@ -148,7 +151,7 @@ class WebRtcService {
       'offer': {'type': offer.type, 'sdp': offer.sdp},
     });
 
-    // Watch for answer from callee
+    // Watch for answer from callee + receiverOnline signal
     _answerSub = FirebaseFirestore.instance
         .collection('calls')
         .doc(callId)
@@ -161,6 +164,16 @@ class WebRtcService {
           if (status == 'rejected' || status == 'ended') {
             _callStatusController.add(status ?? 'ended');
             return;
+          }
+
+          // Receiver's IncomingCallScreen opened and wrote receiverOnline:true.
+          // Only emit 'ringing' once — the field stays true in Firestore so
+          // every subsequent snapshot would re-fire without this guard.
+          final receiverOnline = data['receiverOnline'] as bool? ?? false;
+          if (receiverOnline && !_ringingEmitted) {
+            _ringingEmitted = true;
+            _callStatusController.add('ringing');
+            debugPrint('📱 [WebRTC] receiverOnline detected → emitting ringing');
           }
 
           if (_peerConnection?.signalingState ==
@@ -487,6 +500,7 @@ class WebRtcService {
     _pendingCandidates.clear();
     _remoteDescriptionSet = false;
     _isCallInProgress = false;
+    _ringingEmitted = false;
 
     await _localStream?.dispose();
     await _remoteStream?.dispose();
@@ -505,6 +519,23 @@ class WebRtcService {
     _isFrontCamera = true;
 
     debugPrint('🧹 [WebRTC] Cleaned up');
+  }
+
+  /// Called by IncomingCallScreen on open to signal the caller that the
+  /// receiver's device got the call and the screen is showing.
+  /// This is what makes the caller's label switch from 'Calling...' → 'Ringing'.
+  static Future<void> signalReceiverOnline(String callId) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('calls')
+          .doc(callId)
+          .update({'receiverOnline': true});
+      debugPrint('📱 [WebRTC] receiverOnline:true written for $callId');
+    } catch (e) {
+      // Non-fatal — if this fails the caller stays on 'Calling...' which
+      // is still correct (better than showing 'Ringing' when it isn't).
+      debugPrint('⚠️ [WebRTC] signalReceiverOnline failed: $e');
+    }
   }
 
   /// Creates the initial Firestore call document (called before createCall).
