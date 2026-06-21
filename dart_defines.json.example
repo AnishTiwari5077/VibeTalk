@@ -2,7 +2,7 @@
   "_instructions": [
     "1. Copy this file: cp dart_defines.json.example dart_defines.json",
     "2. Fill in your real values below (dart_defines.json is gitignored)",
-    "3. Run app:      flutter run --dart-define-from-file dart_defines.json,
+    "3. Run app: flutter run --dart-define-from-file dart_defines.json    ,
     "4. Build APK:  ", flutter build apk --release --dart-define-from-file dart_defines.json
     "5. Build AAB:   flutter build appbundle --release --dart-define-from-file dart_defines.json"
   ],

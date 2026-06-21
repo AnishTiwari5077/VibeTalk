@@ -7,6 +7,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:vibetalk/models/call_model.dart';
 import 'package:vibetalk/providers/call_state_provider.dart';
@@ -94,6 +95,10 @@ class _CallingScreenState extends State<CallingScreen>
       if (!mounted) return;
       if (status == 'ended' || status == 'rejected') {
         _endCallAndPop(fromRemote: true);
+      } else if (status == 'ringing') {
+        // receiverOnline:true written by IncomingCallScreen —
+        // receiver's phone is genuinely ringing now.
+        setState(() => _statusLabel = 'Ringing.....');
       } else if (status == 'accepted') {
         setState(() => _statusLabel = 'Connecting...');
       } else if (status == 'connected') {
@@ -136,8 +141,10 @@ class _CallingScreenState extends State<CallingScreen>
           callId: widget.call.callId,
           isVideo: widget.call.isVideo,
         );
-        // Offer written — callee can now see the call.
-        if (mounted) setState(() => _statusLabel = 'Ringing...');
+        // Offer is now in Firestore. DO NOT set 'Ringing' here.
+        // 'Ringing' is set only when _answerSub detects receiverOnline:true,
+        // meaning the receiver's IncomingCallScreen actually opened.
+        // If receiver has no internet, label stays 'Calling...' until timeout.
       } else {
         await _webrtc.joinCall(
           callId: widget.call.callId,
@@ -343,28 +350,28 @@ class _CallingScreenState extends State<CallingScreen>
   }
 
   Widget _initialsCircle(String initials, double size) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            colors: [
-              AppTheme.primaryLight.withValues(alpha: 0.8),
-              AppTheme.primaryLight.withValues(alpha: 0.3),
-            ],
-          ),
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      gradient: LinearGradient(
+        colors: [
+          AppTheme.primaryLight.withValues(alpha: 0.8),
+          AppTheme.primaryLight.withValues(alpha: 0.3),
+        ],
+      ),
+    ),
+    child: Center(
+      child: Text(
+        initials,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 56,
+          fontWeight: FontWeight.w600,
         ),
-        child: Center(
-          child: Text(
-            initials,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 56,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      );
+      ),
+    ),
+  );
 
   Widget _buildRemoteView() {
     // Only show RTCVideoView once ICE has truly connected.
@@ -418,7 +425,7 @@ class _CallingScreenState extends State<CallingScreen>
               // Before ICE connects: show animated status label.
               // After stream arrived but ICE still pending (receiver WiFi
               // scenario): show spinner so user knows it's negotiating.
-              if (!_iceConnected) ...[  
+              if (!_iceConnected) ...[
                 if (_remoteConnected) // stream arrived, ICE negotiating
                   const Padding(
                     padding: EdgeInsets.only(bottom: 10),
@@ -427,7 +434,9 @@ class _CallingScreenState extends State<CallingScreen>
                       height: 26,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white54),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Colors.white54,
+                        ),
                       ),
                     ),
                   ),
