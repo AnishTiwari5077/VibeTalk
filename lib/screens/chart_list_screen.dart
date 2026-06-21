@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,7 +14,6 @@ import '../../providers/auth_provider.dart';
 import '../../models/user_model.dart';
 
 import '../../theme/app_theme.dart';
-
 
 class ChatListScreen extends ConsumerStatefulWidget {
   const ChatListScreen({super.key});
@@ -60,9 +58,10 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
         .closed
         .then((_) {
           if (!undone) {
-            ref.read(chatServiceProvider).deleteChat(chatId).catchError(
-              (e) => debugPrint('❌ Delete chat error: $e'),
-            );
+            ref
+                .read(chatServiceProvider)
+                .deleteChat(chatId)
+                .catchError((e) => debugPrint('❌ Delete chat error: $e'));
             // DO NOT remove chatId from _dismissedChatIds here.
             // Removing it before Firestore confirms deletion causes a 1-second
             // flash where the deleted chat reappears. The stale entry is cleaned
@@ -286,14 +285,10 @@ class _SwipeToDeleteWrapper extends ConsumerWidget {
       // confirmDismiss+return true would remove the widget from the tree AND
       // _dismissedChatIds would also hide it, causing a layout jump.
       onDismissed: (_) => onDelete(),
-      child: GestureDetector(
-        onLongPress: onLongPress,
-        child: child,
-      ),
+      child: GestureDetector(onLongPress: onLongPress, child: child),
     );
   }
 }
-
 
 // ✅ OPTIMIZED: Extracted to separate widget to prevent rebuilds
 class _ChatListItem extends ConsumerWidget {
