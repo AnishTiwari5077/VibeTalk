@@ -197,7 +197,16 @@ class _CallingScreenState extends State<CallingScreen>
     _callDocSub = null;
 
     if (!fromRemote) {
-      await _webrtc.endCall(widget.call.callId);
+      // Wrap endCall in a safety timeout: even if Firestore hangs (e.g. WiFi
+      // just turned off), we force local cleanup after 5 s so the screen pops.
+      try {
+        await _webrtc
+            .endCall(widget.call.callId)
+            .timeout(const Duration(seconds: 5));
+      } catch (e) {
+        debugPrint('\u26a0\ufe0f [CallingScreen] endCall timed out \u2014 forcing local cleanup: $e');
+        await _webrtc.cleanupLocal();
+      }
       // When the CALLER ends the call before the receiver answers,
       // the receiver's notification banner stays if their app is killed
       // (no Firestore listener active). Send a cancel FCM so their

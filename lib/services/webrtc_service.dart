@@ -301,14 +301,20 @@ class WebRtcService {
   }
 
   /// Ends the call: closes peer connection, updates Firestore status.
+  /// Uses a 3-second timeout on the Firestore write so the screen can
+  /// still pop even when WiFi is off (write is queued and delivered later
+  /// when network recovers).
   Future<void> endCall(String callId) async {
     debugPrint('📵 [WebRTC] endCall $callId');
     try {
-      await FirebaseFirestore.instance.collection('calls').doc(callId).update({
-        'status': 'ended',
-      });
+      await FirebaseFirestore.instance
+          .collection('calls')
+          .doc(callId)
+          .update({'status': 'ended'})
+          .timeout(const Duration(seconds: 3));
     } catch (e) {
-      debugPrint('⚠️ [WebRTC] endCall Firestore update failed: $e');
+      // TimeoutException or network error — Firestore will sync when back online.
+      debugPrint('⚠️ [WebRTC] endCall Firestore update failed/timed out: $e');
     }
     await _cleanup();
   }
@@ -325,11 +331,13 @@ class WebRtcService {
   Future<void> rejectCall(String callId) async {
     debugPrint('🚫 [WebRTC] rejectCall $callId');
     try {
-      await FirebaseFirestore.instance.collection('calls').doc(callId).update({
-        'status': 'rejected',
-      });
+      await FirebaseFirestore.instance
+          .collection('calls')
+          .doc(callId)
+          .update({'status': 'rejected'})
+          .timeout(const Duration(seconds: 3));
     } catch (e) {
-      debugPrint('⚠️ [WebRTC] rejectCall Firestore update failed: $e');
+      debugPrint('⚠️ [WebRTC] rejectCall Firestore update failed/timed out: $e');
     }
     await _cleanup();
   }
