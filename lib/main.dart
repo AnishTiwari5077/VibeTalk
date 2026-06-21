@@ -10,6 +10,7 @@ import 'package:vibetalk/screens/Calling/calling_screen.dart';
 import 'package:vibetalk/screens/Calling/incoming_call_screen.dart';
 import 'package:vibetalk/screens/Conservation/conversation_screen.dart';
 import 'package:vibetalk/models/user_model.dart';
+import 'package:vibetalk/core/instant_route.dart';
 import 'services/notification_services.dart';
 import 'theme/app_theme.dart';
 
@@ -187,10 +188,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
             if (ctx != null && ctx.mounted) {
               Navigator.of(ctx)
                   .push(
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          CallingScreen(call: preloadedCall, isCaller: false),
-                    ),
+                    InstantRoute(CallingScreen(call: preloadedCall, isCaller: false)),
                   )
                   .then((_) => NotificationService.clearSuppressedCall());
             }
@@ -312,9 +310,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
         // User tapped ✅ Accept on notification shade — skip IncomingCallScreen.
         Navigator.of(context)
             .push(
-              MaterialPageRoute(
-                builder: (_) => CallingScreen(call: call, isCaller: false),
-              ),
+              InstantRoute(CallingScreen(call: call, isCaller: false)),
             )
             .then((_) => NotificationService.clearSuppressedCall());
       } else {
@@ -322,7 +318,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
         // Clear suppression AFTER push so auth_wrapper sees it and skips.
         Navigator.of(context)
             .push(
-              MaterialPageRoute(builder: (_) => IncomingCallScreen(call: call)),
+              InstantRoute(IncomingCallScreen(call: call)),
             )
             .then((_) => NotificationService.clearSuppressedCall());
       }

@@ -31,6 +31,14 @@ class MainActivity : FlutterFragmentActivity() {
                         or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             )
         }
+
+        // Keep screen on during call so it doesn't dim mid-call.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // Remove the window open animation when launched from fullScreenIntent.
+        // This eliminates the slide-in transition that creates a visual glitch
+        // when the call notification fires on the lock screen.
+        overridePendingTransition(0, 0)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
