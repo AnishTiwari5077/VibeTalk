@@ -107,7 +107,8 @@ void main() async {
       final snap = await FirebaseFirestore.instance
           .collection('calls')
           .doc(pendingCall!.callId)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 5));
       if (snap.exists && snap.data() != null) {
         final call = CallModel.fromMap(snap.data()!);
         if (call.status == 'ringing') {
@@ -285,7 +286,8 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       final snap = await FirebaseFirestore.instance
           .collection('calls')
           .doc(callId)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 5));
 
       if (!snap.exists || snap.data() == null) {
         debugPrint('⚠️ Call $callId no longer exists');
@@ -320,9 +322,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
         // Clear suppression AFTER push so auth_wrapper sees it and skips.
         Navigator.of(context)
             .push(
-              MaterialPageRoute(
-                builder: (_) => IncomingCallScreen(call: call),
-              ),
+              MaterialPageRoute(builder: (_) => IncomingCallScreen(call: call)),
             )
             .then((_) => NotificationService.clearSuppressedCall());
       }
@@ -338,9 +338,11 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   void _handleCallDeclineTap(String callId) async {
     debugPrint('📞 Call declined from notification — callId: $callId');
     try {
-      await FirebaseFirestore.instance.collection('calls').doc(callId).update({
-        'status': 'rejected',
-      });
+      await FirebaseFirestore.instance
+          .collection('calls')
+          .doc(callId)
+          .update({'status': 'rejected'})
+          .timeout(const Duration(seconds: 5));
       debugPrint('✅ Call $callId marked rejected');
     } catch (e) {
       debugPrint('❌ Failed to decline call $callId: $e');
