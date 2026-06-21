@@ -149,9 +149,24 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
     if (mounted) Navigator.of(context).pop();
   }
 
+  /// Letter avatar used while the network image is loading or when no URL exists.
+  Widget _letterAvatar(String name) => Container(
+        color: AppTheme.primaryLight,
+        alignment: Alignment.center,
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 60,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final callerName = widget.call.callerName;
+    final callerAvatar = widget.call.callerAvatarUrl;
     final isVideo = widget.call.isVideo;
 
     return Scaffold(
@@ -218,8 +233,8 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
                       scale: _pulseAnim,
                       child: RepaintBoundary(
                         child: Container(
-                          width: 140,
-                          height: 140,
+                          width: 148,
+                          height: 148,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             gradient: LinearGradient(
@@ -238,17 +253,25 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
                               ),
                             ],
                           ),
-                          child: Center(
-                            child: Text(
-                              callerName.isNotEmpty
-                                  ? callerName[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 60,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                          // 4-px gradient ring around the photo
+                          padding: const EdgeInsets.all(4),
+                          child: ClipOval(
+                            child: callerAvatar != null && callerAvatar.isNotEmpty
+                                ? Image.network(
+                                    callerAvatar,
+                                    width: 140,
+                                    height: 140,
+                                    fit: BoxFit.cover,
+                                    // Show letter avatar while the image loads
+                                    loadingBuilder: (_, child, progress) =>
+                                        progress == null
+                                            ? child
+                                            : _letterAvatar(callerName),
+                                    // Fall back to letter avatar on error
+                                    errorBuilder: (_, __, ___) =>
+                                        _letterAvatar(callerName),
+                                  )
+                                : _letterAvatar(callerName),
                           ),
                         ),
                       ),
