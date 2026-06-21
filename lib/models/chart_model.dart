@@ -1,85 +1,88 @@
-// lib/models/call_model.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class CallModel {
-  final String callId;
-  final String callerId;
-  final String callerName;
-  final String? callerAvatarUrl;
-  final String calleeId;
-  final String calleeName;
-  final bool isVideo;
-  // 'ringing' | 'accepted' | 'rejected' | 'ended'
-  // Note: receiverOnline (bool) is a separate Firestore field written by
-  // joinCall() in webrtc_service.dart when the callee accepts the call.
-  // It is NOT stored in CallModel; _answerSub reads it directly from the
-  // raw Firestore snapshot to trigger the 'Calling' → 'Ringing' transition.
+class ChatModel {
+  final String chatId;
+  final List<String> participants;
+  final String? lastMessage;
+  final DateTime? lastMessageTime;
+  final Map<String, int> unreadCount;
+  final Map<String, Map<String, dynamic>>? participantsData;
 
-  final String? calleeAvatarUrl;
-  final String status;
-  final Map<String, dynamic>? offer;
-  final Map<String, dynamic>? answer;
-  final DateTime createdAt;
-
-  const CallModel({
-    required this.callId,
-    required this.callerId,
-    required this.callerName,
-    this.callerAvatarUrl,
-    required this.calleeId,
-    required this.calleeName,
-    this.calleeAvatarUrl,
-    required this.isVideo,
-    required this.status,
-    this.offer,
-    this.answer,
-    required this.createdAt,
+  ChatModel({
+    required this.chatId,
+    required this.participants,
+    this.lastMessage,
+    this.lastMessageTime,
+    required this.unreadCount,
+    this.participantsData,
   });
 
-  Map<String, dynamic> toMap() => {
-    'callId': callId,
-    'callerId': callerId,
-    'callerName': callerName,
-    'callerAvatarUrl': callerAvatarUrl,
-    'calleeId': calleeId,
-    'calleeName': calleeName,
-    'calleeAvatarUrl': calleeAvatarUrl,
-    'isVideo': isVideo,
-    'status': status,
-    'offer': offer,
-    'answer': answer,
-    'createdAt': createdAt.millisecondsSinceEpoch,
-  };
+  Map<String, dynamic> toMap() {
+    return {
+      'chatId': chatId,
+      'participants': participants,
+      'lastMessage': lastMessage,
+      'lastMessageTime': lastMessageTime?.millisecondsSinceEpoch,
+      'unreadCount': unreadCount,
+      'participantsData': participantsData,
+    };
+  }
 
-  factory CallModel.fromMap(Map<String, dynamic> map) => CallModel(
-    callId: map['callId'] as String? ?? '',
-    callerId: map['callerId'] as String? ?? '',
-    callerName: map['callerName'] as String? ?? '',
-    callerAvatarUrl: map['callerAvatarUrl'] as String?,
-    calleeId: map['calleeId'] as String? ?? '',
-    calleeName: map['calleeName'] as String? ?? '',
-    calleeAvatarUrl: map['calleeAvatarUrl'] as String?,
-    isVideo: map['isVideo'] as bool? ?? false,
-    status: map['status'] as String? ?? 'ringing',
-    offer: map['offer'] as Map<String, dynamic>?,
-    answer: map['answer'] as Map<String, dynamic>?,
-    createdAt: map['createdAt'] != null
-        ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'] as int)
-        : DateTime.now(),
-  );
+  factory ChatModel.fromMap(Map<String, dynamic> map) {
+    return ChatModel(
+      chatId: map['chatId']?.toString() ?? '',
+      participants: List<String>.from(
+        (map['participants'] ?? []).map((e) => e.toString()),
+      ),
+      lastMessage: map['lastMessage']?.toString(),
+      lastMessageTime: _parseDate(map['lastMessageTime']),
+      unreadCount: _parseUnread(map['unreadCount']),
+      participantsData: _parseParticipantsData(map['participantsData']),
+    );
+  }
 
-  CallModel copyWith({String? status, Map<String, dynamic>? answer}) =>
-      CallModel(
-        callId: callId,
-        callerId: callerId,
-        callerName: callerName,
-        callerAvatarUrl: callerAvatarUrl,
-        calleeId: calleeId,
-        calleeName: calleeName,
-        calleeAvatarUrl: calleeAvatarUrl,
-        isVideo: isVideo,
-        status: status ?? this.status,
-        offer: offer,
-        answer: answer ?? this.answer,
-        createdAt: createdAt,
+  static DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+
+    try {
+      if (value is Timestamp) return value.toDate();
+      if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+      if (value is double) {
+        return DateTime.fromMillisecondsSinceEpoch(value.toInt());
+      }
+      if (value is String) return DateTime.tryParse(value);
+    } catch (_) {}
+
+    return null;
+  }
+
+  static Map<String, int> _parseUnread(dynamic value) {
+    if (value == null) return {};
+
+    try {
+      final raw = Map<String, dynamic>.from(value);
+      return raw.map(
+        (key, val) =>
+            MapEntry(key.toString(), (val is int) ? val : (val ?? 0).toInt()),
       );
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Map<String, Map<String, dynamic>>? _parseParticipantsData(
+    dynamic value,
+  ) {
+    if (value == null) return null;
+
+    try {
+      final raw = Map<String, dynamic>.from(value);
+      return raw.map(
+        (key, val) =>
+            MapEntry(key.toString(), Map<String, dynamic>.from(val as Map)),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
 }
