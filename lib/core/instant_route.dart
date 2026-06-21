@@ -14,7 +14,7 @@ import 'package:flutter/material.dart';
 class InstantRoute<T> extends PageRouteBuilder<T> {
   InstantRoute(Widget page)
     : super(
-        pageBuilder: (_, __, ___) => page,
+        pageBuilder: (_, _, _) => page,
         // Zero duration = instant switch, no visible slide/fade.
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
